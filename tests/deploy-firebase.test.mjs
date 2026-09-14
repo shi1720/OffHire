@@ -5,10 +5,13 @@ import {
   deploy,
   parseArgs,
   verifyHosted,
+  requestFirebaseAuth,
 } from "../scripts/deploy-firebase.mjs";
 
 const project = "offhire-test-123";
 const appId = "1:123:web:offhire";
+const creditAccount = "AAAAAA-BBBBBB-CCCCCC";
+const otherAccount = "111111-222222-333333";
 const options = {
   project,
   site: "offhire",
@@ -22,7 +25,16 @@ const clone = (value) => structuredClone(value);
 function fixture(overrides = {}) {
   const state = {
     billing: true,
+    billingAccount: creditAccount,
+    billingAccounts: [
+      {
+        name: `billingAccounts/${creditAccount}`,
+        displayName: "GCP credits account",
+        open: true,
+      },
+    ],
     googleEnabled: true,
+    authApiEnabled: true,
     sites: [],
     databases: [],
     accounts: [],
@@ -53,6 +65,9 @@ function fixture(overrides = {}) {
     },
     log: (message) => logs.push(message),
     login: async () => {},
+    pause: async (ms) => {
+      events.push(["pause", ms]);
+    },
     ask: async (label, fallback) => {
       if (fallback) return fallback;
       throw new Error(`Input required: ${label}`);
@@ -70,10 +85,35 @@ function fixture(overrides = {}) {
       );
       if (starts(["projects", "describe"]))
         return { projectId: project, lifecycleState: "ACTIVE" };
-      if (starts(["billing", "projects", "describe"]))
-        return { billingEnabled: state.billing };
+      if (starts(["billing", "projects", "describe"])) {
+        if (state.linkPending && !state.neverActivate) {
+          if (state.activationReads > 0) state.activationReads--;
+          else state.billing = true;
+        }
+        return {
+          billingEnabled: state.billing,
+          billingAccountName: `billingAccounts/${state.billingAccount}`,
+        };
+      }
+      if (starts(["billing", "accounts", "list"]))
+        return clone(state.billingAccounts);
+      if (starts(["billing", "projects", "link"])) {
+        mutate("gc", args);
+        if (state.failLink) throw new Error("Billing link permission denied");
+        state.billingAccount = args
+          .find((arg) => arg.startsWith("--billing-account="))
+          .split("=")[1];
+        state.linkPending = true;
+        return;
+      }
+      if (starts(["services", "list"]))
+        return state.authApiEnabled
+          ? [{ config: { name: "identitytoolkit.googleapis.com" } }]
+          : [];
       if (starts(["services", "enable"])) {
         mutate("gc", args);
+        if (args.includes("identitytoolkit.googleapis.com"))
+          state.authApiEnabled = true;
         return;
       }
       if (starts(["firestore", "databases", "list"]))
@@ -195,6 +235,11 @@ function fixture(overrides = {}) {
     },
     async google(path, body) {
       events.push(["google", path, body]);
+      assert.equal(
+        state.authApiEnabled,
+        true,
+        "Auth API must be enabled before an Auth request",
+      );
       assert.ok(path.startsWith(`projects/${project}/`));
       if (path.endsWith("/google.com"))
         return { enabled: state.googleEnabled, clientSecret: "must-not-leak" };
@@ -317,6 +362,114 @@ test("an API permission failure is not mistaken for an absent resource", async (
   assert.equal(f.writes.length, 0);
 });
 
+test("interactive billing selection links the chosen credits account and completes deployment", async () => {
+  const f = fixture({
+    billing: false,
+    billingAccounts: [
+      {
+        name: `billingAccounts/${otherAccount}`,
+        displayName: "Other account",
+        open: true,
+      },
+      {
+        name: `billingAccounts/${creditAccount}`,
+        displayName: "Credits account",
+        open: true,
+      },
+    ],
+  });
+  f.io.ask = async (label) => {
+    assert.equal(label, "Billing account to link (number or ID)");
+    return "2";
+  };
+  await deploy(f.io, { ...options, yes: false });
+  assert.equal(f.state.billingAccount, creditAccount);
+  assert.equal(f.state.billing, true);
+  const link = f.events.findIndex((event) => event.includes("link"));
+  const enable = f.events.findIndex((event) => event.includes("enable"));
+  assert.ok(link >= 0 && enable > link);
+  assert.equal(f.events.at(-1)[0], "verify");
+  assert.ok(
+    f.logs.some(
+      (line) => line.includes("Blaze") && line.includes("cannot verify"),
+    ),
+  );
+});
+
+test("explicit billing-account supports a single unattended deploy without choosing by credit assumptions", async () => {
+  const f = fixture({ billing: false });
+  await deploy(f.io, { ...options, "billing-account": creditAccount });
+  assert.equal(f.writes.filter((event) => event.includes("link")).length, 1);
+  assert.equal(f.events.at(-1)[0], "verify");
+});
+
+for (const billingAccounts of [
+  [],
+  [{ name: `billingAccounts/${creditAccount}`, open: false }],
+])
+  test("missing or closed billing accounts stop without linking or creating resources", async () => {
+    const f = fixture({ billing: false, billingAccounts });
+    await assert.rejects(
+      deploy(f.io, { ...options, "billing-account": creditAccount }),
+      /No open billing accounts/,
+    );
+    assert.equal(f.writes.length, 0);
+  });
+
+test("unlisted billing-account IDs are rejected before mutations", async () => {
+  const f = fixture({ billing: false });
+  await assert.rejects(
+    deploy(f.io, { ...options, "billing-account": otherAccount }),
+    /Choose an open billing account/,
+  );
+  assert.equal(f.writes.length, 0);
+});
+
+test("billing link permission failures stop before APIs, IAM and Cloud Build", async () => {
+  const f = fixture({ billing: false, failLink: true });
+  await assert.rejects(
+    deploy(f.io, { ...options, "billing-account": creditAccount }),
+    /Billing link permission denied/,
+  );
+  assert.ok(
+    !f.events.some(
+      (event) =>
+        event.includes("enable") || event.includes("add-iam-policy-binding"),
+    ),
+  );
+  assert.ok(!f.events.some((event) => event[1] === "run"));
+});
+
+test("billing activation is verified after propagation before deploying", async () => {
+  const f = fixture({ billing: false, activationReads: 2 });
+  await deploy(f.io, { ...options, "billing-account": creditAccount });
+  assert.equal(f.events.filter((event) => event[0] === "pause").length, 2);
+  assert.equal(f.state.billing, true);
+  assert.equal(f.events.at(-1)[0], "verify");
+});
+
+test("an unactivated billing link stops after bounded retries", async () => {
+  const f = fixture({ billing: false, neverActivate: true });
+  await assert.rejects(
+    deploy(f.io, { ...options, "billing-account": creditAccount }),
+    /has not yet enabled billing/,
+  );
+  assert.equal(f.events.filter((event) => event[0] === "pause").length, 11);
+  assert.ok(!f.events.some((event) => event.includes("enable")));
+  assert.ok(!f.logs.some((line) => line.includes("OffHire is hosted at")));
+});
+
+test("an active project's billing account is preserved and is never silently moved", async () => {
+  const f = fixture();
+  await assert.rejects(
+    deploy(f.io, { ...options, "billing-account": otherAccount }),
+    /will not move an active project/,
+  );
+  assert.equal(f.writes.length, 0);
+  await deploy(f.io, { ...options, "billing-account": creditAccount });
+  assert.ok(!f.writes.some((event) => event.includes("link")));
+});
+
 test("a failed build does not publish Hosting and the next run resumes existing resources", async () => {
   const f = fixture({ failBuild: true });
   await assert.rejects(deploy(f.io, options), /Cloud Build failed/);
@@ -434,4 +587,141 @@ test("HTTP verification retries a stale revision and fails if the project never 
     /expected Firebase project/,
   );
   assert.equal(reads, 24);
+});
+
+test("deployment enables Identity Toolkit before its first Auth request", async () => {
+  const f = fixture({ authApiEnabled: false });
+  await deploy(f.io, options);
+  const enabled = f.events.findIndex(
+    (event) =>
+      event[1] === "services" &&
+      event[2] === "enable" &&
+      event.includes("identitytoolkit.googleapis.com"),
+  );
+  const checked = f.events.findIndex((event) => event[0] === "google");
+  assert.ok(enabled >= 0 && checked > enabled);
+});
+
+test("Auth REST reads explicitly charge quota to the selected Firebase project", async () => {
+  const token = "fake-local-test-token";
+  const result = await requestFirebaseAuth(
+    `projects/${project}/defaultSupportedIdpConfigs/google.com`,
+    {
+      token,
+      request: async (url, init) => {
+        assert.equal(
+          url,
+          `https://identitytoolkit.googleapis.com/admin/v2/projects/${project}/defaultSupportedIdpConfigs/google.com`,
+        );
+        assert.equal(init.headers.Authorization, `Bearer ${token}`);
+        if (init.headers["x-goog-user-project"] !== project)
+          return Response.json(
+            { error: { message: "The API requires a quota project" } },
+            { status: 403 },
+          );
+        assert.equal(init.method, "GET");
+        assert.equal(init.body, undefined);
+        return Response.json({ enabled: true });
+      },
+    },
+  );
+  assert.equal(result.enabled, true);
+});
+
+test("Auth domain updates use the same explicit quota project and preserve their update mask", async () => {
+  const body = { authorizedDomains: ["existing.example", "offhire.web.app"] };
+  await requestFirebaseAuth(
+    `projects/${project}/config?updateMask=authorizedDomains`,
+    {
+      token: "fake-token",
+      body,
+      request: async (url, init) => {
+        assert.equal(init.headers["x-goog-user-project"], project);
+        assert.ok(url.endsWith("?updateMask=authorizedDomains"));
+        assert.equal(init.method, "PATCH");
+        assert.deepEqual(JSON.parse(init.body), body);
+        return Response.json(body);
+      },
+    },
+  );
+});
+
+test("Auth permission errors expose Google's reason while redacting credentials", async () => {
+  const token = "fake-sensitive-test-token";
+  let attempts = 0;
+  await assert.rejects(
+    requestFirebaseAuth(`projects/${project}/config`, {
+      token,
+      request: async () => {
+        attempts++;
+        return Response.json(
+          {
+            error: {
+              message: `Missing firebaseauth.configs.get for Bearer ${token}`,
+              details: [{ reason: "IAM_PERMISSION_DENIED" }],
+            },
+          },
+          { status: 403 },
+        );
+      },
+    }),
+    (error) => {
+      assert.match(error.message, /IAM_PERMISSION_DENIED/);
+      assert.match(error.message, /firebaseauth.configs.get/);
+      assert.match(error.message, /\[redacted\]/);
+      assert.ok(!error.message.includes(token));
+      return true;
+    },
+  );
+  assert.equal(attempts, 1);
+});
+
+test("Auth check tolerates API-enablement propagation but bounds retries", async () => {
+  let attempts = 0;
+  let waits = 0;
+  const disabled = () =>
+    Response.json(
+      {
+        error: {
+          message: "API is not enabled yet",
+          details: [{ reason: "SERVICE_DISABLED" }],
+        },
+      },
+      { status: 403 },
+    );
+  const result = await requestFirebaseAuth(`projects/${project}/config`, {
+    token: "fake-token",
+    pause: async () => {
+      waits++;
+    },
+    request: async () =>
+      ++attempts < 3 ? disabled() : Response.json({ authorizedDomains: [] }),
+  });
+  assert.deepEqual(result, { authorizedDomains: [] });
+  assert.equal(waits, 2);
+  attempts = 0;
+  await assert.rejects(
+    requestFirebaseAuth(`projects/${project}/config`, {
+      token: "fake-token",
+      pause: async () => {},
+      request: async () => {
+        attempts++;
+        return disabled();
+      },
+    }),
+    /still propagating/,
+  );
+  assert.equal(attempts, 4);
+});
+
+test("Auth helper refuses unexpected resource paths before sending a credential", async () => {
+  await assert.rejects(
+    requestFirebaseAuth("https://unexpected.example/config", {
+      token: "fake-token",
+      request: async () => {
+        assert.fail("must not send token");
+      },
+    }),
+    /valid Firebase Auth resource/,
+  );
 });

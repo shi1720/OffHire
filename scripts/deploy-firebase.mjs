@@ -32,7 +32,11 @@ export function parseArgs(args) {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (["--yes", "--help"].includes(arg)) options[arg.slice(2)] = true;
-    else if (["--project", "--site", "--owner", "--app"].includes(arg)) {
+    else if (
+      ["--project", "--site", "--owner", "--app", "--billing-account"].includes(
+        arg,
+      )
+    ) {
       const value = args[++i];
       if (!value || value.startsWith("--"))
         throw new Error(`${arg} needs a value.`);
@@ -56,6 +60,103 @@ function ownerEmails(value) {
   for (const email of emails)
     validate("operator email", email, /^[^\s@|=,]+@[^\s@|=,]+\.[^\s@|=,]+$/);
   return [...new Set(emails)].join(",");
+}
+
+function billingId(value) {
+  return validate(
+    "billing account ID",
+    value.replace(/^billingAccounts\//, ""),
+    /^[A-Z0-9]{6}-[A-Z0-9]{6}-[A-Z0-9]{6}$/,
+  );
+}
+
+async function selectBillingAccount(io, gc, billing, options) {
+  const requested = options["billing-account"]
+    ? billingId(options["billing-account"])
+    : null;
+  const existing = billing.billingAccountName?.replace(
+    /^billingAccounts\//,
+    "",
+  );
+  if (billing.billingEnabled) {
+    if (requested && requested !== existing)
+      throw new Error(
+        `This project is already linked to ${existing}. The script will not move an active project to a different billing account. Use the existing account or explicitly manage the move in Google Cloud Billing.`,
+      );
+    io.log(
+      `Using the project's linked billing account: ${existing || "already enabled"}.`,
+    );
+    return existing;
+  }
+  const accounts = (
+    await gc(["billing", "accounts", "list", "--filter=open=true"], true)
+  ).filter((entry) => entry.open === true);
+  if (!accounts.length)
+    throw new Error(
+      "No open billing accounts are accessible to this gcloud account. Sign in with the Google account holding your GCP credits, or ask its billing administrator for Billing Account User access, then rerun.",
+    );
+  io.log(
+    "\nChoose the billing account holding your GCP credits. Linking it enables Cloud Run and changes Firebase's plan label to Blaze. Eligible credits apply under their own terms and expiry; this script cannot verify their balance or coverage.\n",
+  );
+  io.log(
+    accounts
+      .map(
+        (entry, index) =>
+          `  ${index + 1}. ${entry.displayName || "Billing account"} — ${entry.name.replace(/^billingAccounts\//, "")}`,
+      )
+      .join("\n"),
+  );
+  if (!requested && options.yes)
+    throw new Error(
+      "Billing is not enabled. Supply --billing-account ACCOUNT_ID when using --yes, or rerun interactively to select the account with your credits.",
+    );
+  const choice =
+    requested ||
+    (await io.ask(
+      "Billing account to link (number or ID)",
+      accounts.length === 1 ? "1" : "",
+      false,
+    ));
+  const selected = /^\d+$/.test(choice)
+    ? accounts[Number(choice) - 1]
+    : accounts.find(
+        (entry) =>
+          entry.name ===
+          `billingAccounts/${choice.replace(/^billingAccounts\//, "")}`,
+      );
+  if (!selected)
+    throw new Error(
+      "Choose an open billing account from the displayed list; nothing has been linked.",
+    );
+  return billingId(selected.name);
+}
+
+async function linkBillingAccount(io, gc, project, account) {
+  io.log(`Linking project ${project} to billing account ${account}…`);
+  await gc([
+    "billing",
+    "projects",
+    "link",
+    project,
+    `--billing-account=${account}`,
+  ]);
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const status = await gc(["billing", "projects", "describe", project], true);
+    if (status.billingEnabled) {
+      if (status.billingAccountName !== `billingAccounts/${account}`)
+        throw new Error(
+          "The project's billing account changed unexpectedly. Verify the link in Cloud Billing before deploying.",
+        );
+      io.log("Billing link verified. Continuing deployment…");
+      return;
+    }
+    if (attempt === 0)
+      io.log("Waiting for Google Cloud to activate the billing link…");
+    if (attempt < 11) await io.pause(5000);
+  }
+  throw new Error(
+    "The billing link was requested, but Google Cloud has not yet enabled billing. Wait a minute and rerun the same command; the existing link will be reused.",
+  );
 }
 
 // Injected I/O lets tests exercise first deploy, reruns and failure boundaries
@@ -98,15 +199,13 @@ export async function deploy(io, options = {}) {
   const gc = (args, json = false) => io.gc([...args, ...projectArgs], json);
   const fb = (args, json = false) => io.fb([...args, ...projectArgs], json);
 
-  io.log(`\nChecking Firebase project ${project}…`);
+  io.log(
+    `\nChecking Firebase project ${project}…\nGoogle Cloud account: ${account}`,
+  );
   const details = await gc(["projects", "describe", project], true);
   if (details.projectId !== project || details.lifecycleState !== "ACTIVE")
     throw new Error("The selected Google Cloud project is not active.");
   const billing = await gc(["billing", "projects", "describe", project], true);
-  if (!billing.billingEnabled)
-    throw new Error(
-      `Billing is not enabled. Link your chosen billing account in https://console.firebase.google.com/project/${project}/usage/details, then rerun. The script does not choose or link a billing account.`,
-    );
 
   const { sites } = await fb(["hosting:sites:list"], true);
   const site = validate(
@@ -122,6 +221,25 @@ export async function deploy(io, options = {}) {
     /^[a-z0-9](?:[a-z0-9-]{2,28}[a-z0-9])$/,
   );
   const origin = `https://${site}.web.app`;
+  const enabledServices = await gc(
+    [
+      "services",
+      "list",
+      "--enabled",
+      "--filter=config.name:identitytoolkit.googleapis.com",
+    ],
+    true,
+  );
+  if (
+    !enabledServices.some(
+      (entry) => entry.config?.name === "identitytoolkit.googleapis.com",
+    )
+  ) {
+    io.log(
+      "Enabling the Firebase Authentication API before checking Google sign-in…",
+    );
+    await gc(["services", "enable", "identitytoolkit.googleapis.com"]);
+  }
   const googlePath = `projects/${project}/defaultSupportedIdpConfigs/google.com`;
   const google = await io.google(googlePath);
   if (google.enabled !== true)
@@ -165,8 +283,9 @@ export async function deploy(io, options = {}) {
         throw new Error("Choose one of the listed Web App IDs.");
     }
   }
+  const billingAccount = await selectBillingAccount(io, gc, billing, options);
   io.log(
-    `\nDeploying OffHire\n  Project:  ${project}\n  URL:      ${origin}\n  Operator: ${owner}\n  Region:   ${REGION}\n\nThis provisions the runtime/build identities and publishes the app using the project's existing billing account. First deploy starts with live calling disabled.\n`,
+    `\nDeploying OffHire\n  Project:  ${project}\n  URL:      ${origin}\n  Operator: ${owner}\n  Region:   ${REGION}\n  Billing:  ${billingAccount || "already enabled"}\n\nThis provisions the runtime/build identities and publishes the app using the selected billing account. First deploy starts with live calling disabled.\n`,
   );
   io.save(STATE, { project, site, owner, ...(app ? { app } : {}) });
 
@@ -177,6 +296,8 @@ export async function deploy(io, options = {}) {
     await fb(["hosting:sites:create", site]);
   }
   await fb(["hosting:sites:get", site], true);
+  if (!billing.billingEnabled)
+    await linkBillingAccount(io, gc, project, billingAccount);
   io.log("Enabling deployment services…");
   await gc(["services", "enable", ...SERVICES]);
 
@@ -377,6 +498,67 @@ function readJson(path) {
   }
 }
 
+export async function requestFirebaseAuth(
+  path,
+  { token, body, request = fetch, pause = delay },
+) {
+  const project = path.match(
+    /^projects\/([a-z][a-z0-9-]{4,28}[a-z0-9])\/(?:config(?:\?updateMask=authorizedDomains)?|defaultSupportedIdpConfigs\/google\.com)$/,
+  )?.[1];
+  if (!project || !token)
+    throw new Error(
+      "A valid Firebase Auth resource and Google Cloud access token are required.",
+    );
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const response = await request(
+      `https://identitytoolkit.googleapis.com/admin/v2/${path}`,
+      {
+        method: body ? "PATCH" : "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          // gcloud user tokens can otherwise fall back to Google's shared CLI
+          // project, where Identity Toolkit rejects requests with HTTP 403.
+          "x-goog-user-project": project,
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+        signal: AbortSignal.timeout(30000),
+      },
+    );
+    const payload = await response.json().catch(() => ({}));
+    if (response.ok) return payload;
+    const reason =
+      payload.error?.details?.find(
+        (detail) => typeof detail.reason === "string",
+      )?.reason || "";
+    if (reason === "SERVICE_DISABLED" && attempt < 3) {
+      await pause(5000);
+      continue;
+    }
+    const redact = (value) =>
+      String(value || "")
+        .split(token)
+        .join("[redacted]")
+        .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
+        .replace(/ya29\.[A-Za-z0-9._-]+/g, "[redacted]")
+        .replace(/AIza[A-Za-z0-9_-]{30,}/g, "[redacted]")
+        .replace(/[\x00-\x1f\x7f]/g, " ")
+        .slice(0, 1200);
+    let hint = `Check that the Google Cloud account shown above can manage Firebase Auth for ${project}. Reads need firebaseauth.configs.get; domain updates need firebaseauth.configs.update; using the project for quota needs serviceusage.services.use.`;
+    if (reason === "SERVICE_DISABLED")
+      hint =
+        "The Authentication API was enabled but is still propagating. Wait briefly and rerun the same deployment command.";
+    if (reason === "ACCESS_TOKEN_SCOPE_INSUFFICIENT" || response.status === 401)
+      hint =
+        "Refresh the Cloud Shell login with gcloud auth login, then rerun the deployment command.";
+    if (response.status === 404)
+      hint = `Initialize Authentication and enable Google sign-in in the Firebase console for ${project}.`;
+    throw new Error(
+      `Firebase Auth request failed (HTTP ${response.status}${reason ? `, ${redact(reason)}` : ""}). ${redact(payload.error?.message) || "Google returned no error details."} ${hint}`,
+    );
+  }
+}
+
 function command(binary, args, { capture = true, optional = false } = {}) {
   const result = spawnSync(binary, args, {
     cwd: ROOT,
@@ -456,7 +638,7 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   if (options.help) {
     console.log(
-      `Usage: npm run deploy:firebase [-- --project PROJECT_ID --site offhire --owner you@gmail.com]\n\nUses your existing Firebase project and Google sign-in. Creates/reuses runtime and build service accounts, discovers web config, authorizes the Hosting domain, and deploys Cloud Run + Firebase Hosting + Firestore rules.\n\nRequires Node 22.13+ and gcloud (preinstalled in Google Cloud Shell). Firebase CLI is downloaded through npx automatically. Billing must already be linked; the script never selects a billing account. No npm ci or local Docker is needed to deploy.\n\nOptions: --project ID  --site ID  --owner EMAIL[,EMAIL]  --app WEB_APP_ID\n         --yes (use supplied/saved settings without prompts; does not accept missing values)\n         --help\n\nSettings are saved in ignored .deploy/firebase-deploy.json. First deployment disables live calls. Redeployments preserve live flags, destination allowlists, and existing CALL-E secrets. Never put a secret in these options.`,
+      `Usage: npm run deploy:firebase [-- --project PROJECT_ID --site offhire --owner you@gmail.com]\n\nUses your existing Firebase project and Google sign-in. Creates/reuses runtime and build service accounts, discovers web config, authorizes the Hosting domain, and deploys Cloud Run + Firebase Hosting + Firestore rules.\n\nRequires Node 22.13+ and gcloud (preinstalled in Google Cloud Shell). Firebase CLI is downloaded through npx automatically. If billing is missing, choose the account holding your GCP credits in the script; it links and verifies it before continuing. Linking changes Firebase to Blaze. Credit coverage and expiry depend on your credit program. No npm ci or local Docker is needed to deploy.\n\nOptions: --project ID  --site ID  --owner EMAIL[,EMAIL]  --app WEB_APP_ID\n         --billing-account ACCOUNT_ID (required with --yes when billing is not enabled)\n         --yes (use supplied/saved settings without prompts; does not accept missing values)\n         --help\n\nSettings are saved in ignored .deploy/firebase-deploy.json. First deployment disables live calls. Redeployments preserve live flags, destination allowlists, and existing CALL-E secrets. Never put a secret in these options.`,
     );
     return;
   }
@@ -504,6 +686,7 @@ async function main() {
           renameSync(`${destination}.tmp`, destination);
         },
         log: console.log,
+        pause: delay,
         async ask(label, fallback, nonInteractive) {
           if (nonInteractive) {
             if (fallback) return fallback;
@@ -570,23 +753,7 @@ async function main() {
             "print-access-token",
             "--quiet",
           ]);
-          const response = await fetch(
-            `https://identitytoolkit.googleapis.com/admin/v2/${path}`,
-            {
-              method: body ? "PATCH" : "GET",
-              headers: {
-                Authorization: `Bearer ${token}`,
-                "Content-Type": "application/json",
-              },
-              ...(body ? { body: JSON.stringify(body) } : {}),
-              signal: AbortSignal.timeout(30000),
-            },
-          );
-          if (!response.ok)
-            throw new Error(
-              `Firebase Auth configuration request failed (HTTP ${response.status}). Check Google sign-in is enabled and your gcloud account has firebaseauth.configs.get/update for the selected project. No credentials were logged.`,
-            );
-          return response.json();
+          return requestFirebaseAuth(path, { token, body });
         },
         verify: verifyHosted,
       },

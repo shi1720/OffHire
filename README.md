@@ -111,7 +111,7 @@ Shivam Gupta is the project owner and builder. The application uses open-source 
 
 ## Firebase deployment
 
-With your Firebase project, billing and Google sign-in already set up, run:
+With your Firebase project and Google sign-in already set up, run:
 
 ```sh
 git pull
@@ -128,6 +128,6 @@ To supply the values directly:
 npm run deploy:firebase -- --project YOUR_FIREBASE_PROJECT_ID --site offhire --owner YOUR_GOOGLE_EMAIL
 ```
 
-The `offhire` site ID must be available or already belong to that project. Settings are saved in ignored `.deploy/firebase-deploy.json`; rerun the same command for updates. A first deploy keeps live calls disabled; updates preserve existing CALL-E secret bindings, destination allowlists, call budgets and live settings. The script uses your already-linked billing account and does not select one for you.
+The `offhire` site ID must be available or already belong to that project. Settings are saved in ignored `.deploy/firebase-deploy.json`; rerun the same command for updates. A first deploy keeps live calls disabled; updates preserve existing CALL-E secret bindings, destination allowlists, call budgets and live settings. The script reuses linked billing. If billing is missing, it lists open accounts and links the one you select; choose the account holding your GCP credits. Linking changes Firebase to Blaze, and credit coverage depends on your credit terms and expiry. An active project is never silently moved to another billing account.
 
 [Full deployment details, prerequisites and optional live-call secret setup](docs/firebase-deployment.md). Script workflow tests run with `npm run test:deploy`; they use fixture responses and do not create cloud resources. Actual cloud deployment is verified when you run the deploy command.

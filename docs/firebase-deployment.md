@@ -4,7 +4,7 @@ Verified against official documentation on 14 September 2026. The Firebase adapt
 
 ## One-command deployment for your existing Firebase project
 
-You can skip the manual steps below if your Firebase project already exists, billing is linked and Google sign-in is enabled. In your updated checkout, run:
+You can skip the manual steps below if your Firebase project already exists and Google sign-in is enabled. An accessible Google Cloud billing account is needed; the script can link it for you. In your updated checkout, run:
 
 ```bash
 git pull
@@ -15,7 +15,7 @@ Enter your existing **Firebase project ID**, the **Hosting site ID** (press Ente
 
 The command uses `scripts/deploy-firebase.mjs` and performs the remaining setup: service APIs, runtime/build identities and IAM roles, Firestore database if absent, Auth authorized domain, container build, Cloud Run deployment, Firestore rules/indexes, and Firebase Hosting publication. It reuses existing resources. It checks the served page, Firebase project configuration and demo database access before printing success. This verifies deployment, not production Google login or a phone conversation; sign in yourself after deployment.
 
-Run in [Google Cloud Shell](https://shell.cloud.google.com/) or a Mac/Linux terminal with **Node 22.13+ and gcloud**. The script retrieves Firebase CLI 15.30.0 through `npx` and initiates CLI login if needed. No `npm ci` or local Docker is required. If billing is missing or Google sign-in is disabled, it stops with the exact prerequisite to fix. It does not choose a billing account.
+Run in [Google Cloud Shell](https://shell.cloud.google.com/) or a Mac/Linux terminal with **Node 22.13+ and gcloud**. The script retrieves Firebase CLI 15.30.0 through `npx` and initiates CLI login if needed. No `npm ci` or local Docker is required. If billing is missing, the script lists open billing accounts and asks which one to link. Choose the account holding your GCP credits. It verifies activation before deploying and reuses an existing active link. Google sign-in must already be enabled.
 
 For explicit settings:
 
@@ -33,11 +33,21 @@ npm run deploy:firebase
 
 Future updates use `git pull` and `npm run deploy:firebase` again. Selection settings are saved in `.deploy/firebase-deploy.json`, excluded from Git and the cloud build. Existing CALL-E secrets, destination allowlists, budgets and live flags are preserved through partial environment updates. The first deployment defaults to live calls disabled and a five-call limit. The script never asks for a CALL-E key or places calls; use optional step 8 later.
 
-`--app WEB_APP_ID` selects a particular Firebase web app. `--yes` suppresses script prompts using supplied/saved values; authenticate both CLIs first and supply `--owner` on a fresh unattended deployment. Run `npm run deploy:firebase -- --help` for options. If a build or permission check fails, fix the reported error and rerun; no new project is created and existing resources are reused. Organization IAM restrictions can still require an administrator.
+`--app WEB_APP_ID` selects a particular Firebase web app. `--yes` suppresses script prompts using supplied/saved values; authenticate both CLIs first and supply `--owner` on a fresh unattended deployment. Also supply `--billing-account ACCOUNT_ID` if billing is not enabled. The script never silently moves an active project to a different billing account. Run `npm run deploy:firebase -- --help` for options. If a build or permission check fails, fix the reported error and rerun; no new project is created and existing resources are reused. Organization IAM restrictions can still require an administrator.
 
 The script deploys this repository's Firestore rules and indexes to the selected project and publishes the selected Hosting site. Use the Firebase project dedicated to OffHire. `offhire.web.app` is only available when your project owns the `offhire` Hosting site; the script stops if another project owns it.
 
-Fourteen fixture-based deployment tests cover provisioning, reruns, credential preservation, failures and verification. These tests do not provision real Google Cloud resources. The script follows the official [Auth configuration API](https://docs.cloud.google.com/identity-platform/docs/reference/rest/v2/projects/updateConfig), [Google provider configuration API](https://docs.cloud.google.com/identity-platform/docs/reference/rest/v2/projects.defaultSupportedIdpConfigs/get), and [gcloud structured flag-file format](https://docs.cloud.google.com/sdk/gcloud/reference/topic/flags-file).
+Twenty-nine fixture-based deployment tests cover provisioning, billing selection and propagation, reruns, credential preservation, Auth quota headers, API-enablement ordering, error redaction and deployment verification. These tests do not provision real Google Cloud resources. The script follows the official [Auth configuration API](https://docs.cloud.google.com/identity-platform/docs/reference/rest/v2/projects/updateConfig), [Google provider configuration API](https://docs.cloud.google.com/identity-platform/docs/reference/rest/v2/projects.defaultSupportedIdpConfigs/get), and [gcloud structured flag-file format](https://docs.cloud.google.com/sdk/gcloud/reference/topic/flags-file).
+
+### Cloud Shell Auth HTTP 403 troubleshooting
+
+The script sends `x-goog-user-project` with the selected project on every Firebase Auth admin request. This avoids relying on the shared project associated with a `gcloud` user access token. It checks/enables `identitytoolkit.googleapis.com` before testing Google sign-in and briefly retries API-enablement propagation. [Google quota-project guidance](https://docs.cloud.google.com/docs/quotas/set-quota-project)
+
+If an Auth request still fails, the updated script prints Google's error reason and message with tokens redacted, plus the active Google Cloud account. An actual IAM denial requires that account to have the stated Firebase Auth permissions; API enablement and quota headers do not grant permissions. Scope/expired-login errors direct you to refresh `gcloud auth login`. Do not disable the Auth check or paste access tokens into chat.
+
+### Using GCP credits
+
+Linking the billing account holding GCP credits automatically changes the Firebase plan label to Blaze. Eligible usage can consume those credits according to their scope, balance and expiry. The script cannot verify credit balances or guarantee zero charges; a different billing account does not inherit credits. [Firebase guidance on Cloud credits](https://firebase.google.com/docs/projects/billing/firebase-pricing-plans)
 
 The numbered steps below remain available as a manual reference; the script replaces steps 4–7 and checks/reuses the prerequisites from steps 1–3.
 
