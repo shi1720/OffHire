@@ -26,7 +26,7 @@ npm run deploy:firebase -- --project YOUR_FIREBASE_PROJECT_ID --site offhire --o
 For a fresh Cloud Shell checkout:
 
 ```bash
-git clone https://github.com/shi1720/call-e.git offhire-firebase
+git clone https://github.com/shi1720/OffHire.git offhire-firebase
 cd offhire-firebase
 npm run deploy:firebase
 ```
@@ -82,7 +82,7 @@ gcloud auth login
 firebase --version
 gcloud version
 
-git clone https://github.com/shi1720/call-e.git offhire-firebase
+git clone https://github.com/shi1720/OffHire.git offhire-firebase
 cd offhire-firebase
 ```
 

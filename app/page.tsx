@@ -1268,7 +1268,7 @@ export default function Home() {
                 </p>
                 <a
                   className="external-link"
-                  href="https://github.com/shi1720/call-e"
+                  href="https://github.com/shi1720/OffHire"
                   target="_blank"
                   rel="noreferrer"
                 >

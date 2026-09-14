@@ -10,9 +10,9 @@ The memorable case: **“We'll pick it up tomorrow” leaves billing unconfirmed
 
 ## Try it
 
-[Hosted application](https://offhire-shivam.sg127977958.chatgpt.site) — currently owner-private; public judge access is pending approval. The local demo below is available to everyone.
+[Hosted application](https://offhire.web.app). The public rehearsal requires no account or API key. Live calling is restricted to approved operators and authorized destinations.
 
-**Validation status:** the offline regression suite and local HTTP/D1 workflow pass. The Firebase standalone build and 51 Firestore/auth/HTTP emulator checks also pass. A real CALL-E owned-number test has not yet been conducted; synthetic transcripts are labeled throughout.
+**Validation status:** the offline regression suite and local HTTP/D1 workflow pass. The Firebase standalone build and 52 Firestore/auth/HTTP emulator checks also pass. A real CALL-E owned-number test has not yet been conducted; synthetic transcripts are labeled throughout.
 
 The application opens in a **clearly labeled demo workspace**. The businesses, rental records, rates, transcripts and outcomes are synthetic. Rehearsals exercise the same decision engine as live calls and never dial a phone.
 
@@ -31,8 +31,8 @@ The standalone [OffHire CLI reference](examples/offhire-cli/README.md) runs with
 Requires Node **22.13+** and npm. No CALL-E account is needed for the demo or tests.
 
 ```sh
-git clone https://github.com/shi1720/call-e.git
-cd call-e
+git clone https://github.com/shi1720/OffHire.git
+cd OffHire
 npm ci
 npm run setup
 npm run dev
@@ -100,6 +100,7 @@ This is a tested hackathon MVP. Production rollout still needs a real supplier p
 - [CALL-E contribution PR #664](https://github.com/CALLE-AI/awesome-phone-call-agents/pull/664)
 - [Product brief](docs/pitch/OffHire-Product-Brief.pdf) · [Editable pitch deck](docs/pitch/OffHire-Pitch.pptx)
 - [Demo narration and recording guide](docs/video-script.md)
+- [Verbatim rehearsal script for the public Firebase app](docs/video-script-verbatim.md)
 - [Timed walkthrough narration](docs/walkthrough-assembly.md)
 - [Reproducible video and generated narration](tools/media/README.md)
 - [Devpost draft](docs/devpost.md)

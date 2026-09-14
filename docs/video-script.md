@@ -1,5 +1,7 @@
 # OffHire: recording script
 
+For the current Firebase deployment and a fresh rehearsal recording, use the [verbatim rehearsal script and screen sequence](video-script-verbatim.md). The older recording variants below remain reference material.
+
 **Presenter:** Shivam Gupta  
 **Target:** 2:45–2:55, always under three minutes  
 **Spoken length:** 309 words with rehearsal wording, or 308 with the live wording, plus the short call excerpt. Leave time for the audience to read the receipt.  
