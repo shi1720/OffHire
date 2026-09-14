@@ -21,7 +21,9 @@
     "build:firebase": "node scripts/build-firebase.mjs",
     "start:firebase": "OFFHIRE_RUNTIME=firebase node .next/standalone/server.js",
     "dev:firebase": "OFFHIRE_RUNTIME=firebase next dev --webpack",
-    "test:firebase": "node scripts/test-firebase.mjs"
+    "test:firebase": "node scripts/test-firebase.mjs",
+    "deploy:firebase": "node scripts/deploy-firebase.mjs",
+    "test:deploy": "node --test tests/deploy-firebase.test.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

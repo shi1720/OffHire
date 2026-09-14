@@ -111,4 +111,23 @@ Shivam Gupta is the project owner and builder. The application uses open-source 
 
 ## Firebase deployment
 
-[Exact Firebase Hosting, Cloud Run, Firestore and Google sign-in setup](docs/firebase-deployment.md). Build with `npm run build:firebase`. This deployment option has been tested locally; cloud resources and the `offhire` site ID have not been provisioned.
+With your Firebase project, billing and Google sign-in already set up, run:
+
+```sh
+git pull
+npm run deploy:firebase
+```
+
+The script asks for your **existing project ID**, **Hosting site ID** (default `offhire`) and **operator Google email**. It creates/reuses the service accounts and Firestore database, discovers your Firebase web configuration, adds the Hosting domain to Google sign-in's authorized domains, and deploys Cloud Run plus Firebase Hosting. It prints the URL after checking the app, Firebase configuration and demo database access.
+
+Use [Google Cloud Shell](https://shell.cloud.google.com/) or a Mac/Linux terminal with Node 22.13+ and `gcloud`. The script downloads the Firebase CLI as needed and guides CLI sign-in. No `npm ci`, local Docker or API-key copying is required to deploy the rehearsal. The build runs in Google Cloud.
+
+To supply the values directly:
+
+```sh
+npm run deploy:firebase -- --project YOUR_FIREBASE_PROJECT_ID --site offhire --owner YOUR_GOOGLE_EMAIL
+```
+
+The `offhire` site ID must be available or already belong to that project. Settings are saved in ignored `.deploy/firebase-deploy.json`; rerun the same command for updates. A first deploy keeps live calls disabled; updates preserve existing CALL-E secret bindings, destination allowlists, call budgets and live settings. The script uses your already-linked billing account and does not select one for you.
+
+[Full deployment details, prerequisites and optional live-call secret setup](docs/firebase-deployment.md). Script workflow tests run with `npm run test:deploy`; they use fixture responses and do not create cloud resources. Actual cloud deployment is verified when you run the deploy command.

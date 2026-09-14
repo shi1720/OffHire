@@ -34,6 +34,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - run: npm run test:deploy
       - run: npm run setup
       - name: Exercise real HTTP routes and local D1
         run: |

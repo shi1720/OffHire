@@ -2,6 +2,45 @@
 
 Verified against official documentation on 14 September 2026. The Firebase adaptation is implemented in the repository. These are commands for Shivam to run; no Firebase or Google Cloud resources have been created or deployed by this task.
 
+## One-command deployment for your existing Firebase project
+
+You can skip the manual steps below if your Firebase project already exists, billing is linked and Google sign-in is enabled. In your updated checkout, run:
+
+```bash
+git pull
+npm run deploy:firebase
+```
+
+Enter your existing **Firebase project ID**, the **Hosting site ID** (press Enter for `offhire`) and the **Google email allowed to operate the app**. The script discovers the Firebase web app/configuration; it creates a web app if none exists and asks you to choose if several cannot be distinguished. You do not need to copy the Firebase API key.
+
+The command uses `scripts/deploy-firebase.mjs` and performs the remaining setup: service APIs, runtime/build identities and IAM roles, Firestore database if absent, Auth authorized domain, container build, Cloud Run deployment, Firestore rules/indexes, and Firebase Hosting publication. It reuses existing resources. It checks the served page, Firebase project configuration and demo database access before printing success. This verifies deployment, not production Google login or a phone conversation; sign in yourself after deployment.
+
+Run in [Google Cloud Shell](https://shell.cloud.google.com/) or a Mac/Linux terminal with **Node 22.13+ and gcloud**. The script retrieves Firebase CLI 15.30.0 through `npx` and initiates CLI login if needed. No `npm ci` or local Docker is required. If billing is missing or Google sign-in is disabled, it stops with the exact prerequisite to fix. It does not choose a billing account.
+
+For explicit settings:
+
+```bash
+npm run deploy:firebase -- --project YOUR_FIREBASE_PROJECT_ID --site offhire --owner YOUR_GOOGLE_EMAIL
+```
+
+For a fresh Cloud Shell checkout:
+
+```bash
+git clone https://github.com/shi1720/call-e.git offhire-firebase
+cd offhire-firebase
+npm run deploy:firebase
+```
+
+Future updates use `git pull` and `npm run deploy:firebase` again. Selection settings are saved in `.deploy/firebase-deploy.json`, excluded from Git and the cloud build. Existing CALL-E secrets, destination allowlists, budgets and live flags are preserved through partial environment updates. The first deployment defaults to live calls disabled and a five-call limit. The script never asks for a CALL-E key or places calls; use optional step 8 later.
+
+`--app WEB_APP_ID` selects a particular Firebase web app. `--yes` suppresses script prompts using supplied/saved values; authenticate both CLIs first and supply `--owner` on a fresh unattended deployment. Run `npm run deploy:firebase -- --help` for options. If a build or permission check fails, fix the reported error and rerun; no new project is created and existing resources are reused. Organization IAM restrictions can still require an administrator.
+
+The script deploys this repository's Firestore rules and indexes to the selected project and publishes the selected Hosting site. Use the Firebase project dedicated to OffHire. `offhire.web.app` is only available when your project owns the `offhire` Hosting site; the script stops if another project owns it.
+
+Fourteen fixture-based deployment tests cover provisioning, reruns, credential preservation, failures and verification. These tests do not provision real Google Cloud resources. The script follows the official [Auth configuration API](https://docs.cloud.google.com/identity-platform/docs/reference/rest/v2/projects/updateConfig), [Google provider configuration API](https://docs.cloud.google.com/identity-platform/docs/reference/rest/v2/projects.defaultSupportedIdpConfigs/get), and [gcloud structured flag-file format](https://docs.cloud.google.com/sdk/gcloud/reference/topic/flags-file).
+
+The numbered steps below remain available as a manual reference; the script replaces steps 4–7 and checks/reuses the prerequisites from steps 1–3.
+
 ## Recommended deployment
 
 Use Firebase Hosting for `https://offhire.web.app`, forwarding the application to the `offhire` Cloud Run service in `us-central1`. Cloud Run builds the repository's Dockerfile, runs the Next.js standalone server, and accesses the default Firestore database with its own service account. Firebase Authentication handles Google sign-in; OffHire checks verified Google email addresses against `OFFHIRE_OWNER_EMAILS` on the server.
