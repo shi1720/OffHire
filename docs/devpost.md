@@ -5,15 +5,17 @@
 **Contribution area:** User-facing Apps  
 **Project source:** [github.com/shi1720/call-e](https://github.com/shi1720/call-e)
 
-## Fields that still need final values
+## Submission links and fields
 
 | Devpost field | Final value |
 | --- | --- |
-| Upstream PR URL | **[REQUIRED: PASTE THE OPEN PR TO CALLE-AI/awesome-phone-call-agents]** |
+| Upstream PR URL | [Open pull request #664](https://github.com/CALLE-AI/awesome-phone-call-agents/pull/664) — verified open |
 | Demonstration video | **[REQUIRED: PUBLIC YOUTUBE OR VIMEO URL, UNDER THREE MINUTES]** |
 | CALL-E account email | **[REQUIRED: EXACT EMAIL FROM THE CALL-E ACCOUNT]** |
-| Working demo/test build | **[PASTE VERIFIED DEPLOYMENT URL OR REPRODUCIBLE TEST INSTRUCTIONS]** |
-| Devpost username / registration | **[VERIFY THE ACTUAL ACCOUNT IS REGISTERED]** |
+| Working demo/test build | [Deployed OffHire app](https://offhire-shivam.sg127977958.chatgpt.site) — **currently private; public audience choice pending** |
+| Devpost username / registration | Verified signed-in Devpost account is registered; draft creation is paused at a CAPTCHA. |
+
+The source is public, the upstream contribution PR is open, and [repository CI passes](https://github.com/shi1720/call-e/actions/runs/34844022503). The hosted synthetic rehearsal has been verified against the deployed persistent database. These checks do not establish a live CALL-E phone call, and the private deployment does not yet establish access for judges. **Devpost has not been submitted.**
 
 The project deadline is **14 September 2026, 21:15 IST / 23:45 SGT / 15:45 UTC**. A saved draft is not a submitted entry. Keep judge access available free of charge through **13 October 2026, 14:30 IST / 17:00 SGT**. [Official rules](https://call-e.devpost.com/rules)
 
@@ -93,7 +95,10 @@ The open-source workflow remains available for builders using their own CALL-E a
 
 - [ ] Replace all required placeholders above with verified values.
 - [ ] Confirm the code and deployment link show the final submitted version.
-- [ ] Open the upstream PR in the correct contribution area and copy its URL to Devpost. The rules require an open PR; do not delay submission waiting for a merge.
+- [x] Open the upstream PR in the correct contribution area: [#664](https://github.com/CALLE-AI/awesome-phone-call-agents/pull/664).
+- [ ] Copy that PR URL to Devpost. The rules require an open PR; do not delay submission waiting for a merge.
+- [ ] Resolve judge access to the currently private hosted app, or supply working test instructions with the submission.
+- [ ] Add voiceover to `OffHire-Walkthrough-Silent.mp4` using `OffHire-Walkthrough-Assembly.md`, or record the longer script.
 - [ ] Choose the video script's rehearsal or verified-live version. Remove the unused demonstration-status paragraph before pasting the description.
 - [ ] Check the video duration is under 3:00 and its public YouTube/Vimeo link plays while logged out.
 - [ ] Keep credentials, full real destinations and unrelated account details out of footage and repository history.

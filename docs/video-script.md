@@ -5,6 +5,8 @@
 **Spoken length:** 309 words with rehearsal wording, or 308 with the live wording, plus the short call excerpt. Leave time for the audience to read the receipt.  
 **Current evidence status:** No live CALL-E call has been verified. Use the **rehearsal wording** below unless an authorized live test succeeds and its result can be shown.
 
+**Shortest recording path:** `OffHire-Walkthrough-Silent.mp4` already contains a two-minute screenshot walkthrough. Use the matching verbatim narration and assembly instructions in `OffHire-Walkthrough-Assembly.md` if you want to record only your voice. The longer script below remains useful for a fresh screen capture or an actual live-call insert.
+
 Read only the quoted narration, using one version of section 4. Screen directions and checklists are not spoken. Keep the app's **DEMO · SYNTHETIC DATA** indicator visible during rehearsals. All companies, rental contracts and assets in this demonstration are fictional.
 
 ## 1. Opening: 0:00–0:21

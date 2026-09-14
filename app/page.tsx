@@ -1082,15 +1082,23 @@ export default function Home() {
                       <div className="checklist">
                         <span className={j?.decision?.offRentAt ? "done" : ""}>
                           <Check size={14} />
-                          Billing cutoff
+                          Billing:{" "}
+                          {j?.decision?.offRentAt ? "confirmed" : "pending"}
                         </span>
                         <span className={r.writtenConfirmation ? "done" : ""}>
                           <FileText size={14} />
-                          Written confirmation
+                          Written confirmation:{" "}
+                          {r.writtenConfirmation ? "received" : "pending"}
                         </span>
                         <span className={r.collectedAt ? "done" : ""}>
                           <Truck size={14} />
-                          Collected
+                          Collection:{" "}
+                          {r.collectedAt ? "recorded" : "awaiting pickup"}
+                        </span>
+                        <span className={r.invoiceReviewed ? "done" : ""}>
+                          <FileText size={14} />
+                          Invoice review:{" "}
+                          {r.invoiceReviewed ? "recorded" : "pending"}
                         </span>
                       </div>
                       {j ? (

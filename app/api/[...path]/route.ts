@@ -340,7 +340,12 @@ async function handler(request: Request) {
         const jobs = await jobsFor(ctx.workspaceId);
         const decision =
           jobs.find((j) => j.rentalId === r.id && j.decision)?.decision ?? null;
-        const review = invoiceReview(billedThrough, decision);
+        let review: ReturnType<typeof invoiceReview>;
+        try {
+          review = invoiceReview(billedThrough, decision);
+        } catch {
+          throw new ServiceError("Enter a valid invoice end date.", 400);
+        }
         await recordAudit(
           ctx.workspaceId,
           r.id,

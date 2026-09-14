@@ -1,6 +1,6 @@
 # Validation record
 
-Validated on 14 September 2026. Tests use fictional data and never dial a live number. Passing simulations do not prove carrier connectivity or a real supplier outcome.
+Validated on 14 September 2026: 67 behavior tests, 19 service integration regressions and 24 HTTP checks passed. The standalone reference has its own 79-test suite with overlapping core cases. Tests use fictional data and never dial a live number. Passing simulations do not prove carrier connectivity or a real supplier outcome.
 
 | Layer | Command | What it verifies |
 |---|---|---|

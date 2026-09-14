@@ -10,6 +10,8 @@ The memorable case: **“We'll pick it up tomorrow” leaves billing unconfirmed
 
 ## Try it
 
+[Hosted application](https://offhire-shivam.sg127977958.chatgpt.site) — currently owner-private; public judge access is pending approval. The local demo below is available to everyone.
+
 **Validation status:** the offline regression suite and local HTTP/D1 workflow pass. A real CALL-E owned-number test has not yet been conducted; synthetic transcripts are labeled throughout.
 
 The application opens in a **clearly labeled demo workspace**. The businesses, rental records, rates, transcripts and outcomes are synthetic. Rehearsals exercise the same decision engine as live calls and never dial a phone.
@@ -21,6 +23,8 @@ The application opens in a **clearly labeled demo workspace**. The businesses, r
 5. Check an invoice end date, record physical collection, and export the evidence ledger.
 
 Reset the sample records from **Connection → Reset sample scenario**. Each browser session gets its own persisted demo records. Live records require an approved operator.
+
+The standalone [OffHire CLI reference](examples/offhire-cli/README.md) runs without a hosted service and offers an explicitly authorized owned-number roleplay. It is also contributed to CALL-E’s examples repository.
 
 ## Local setup
 
@@ -93,7 +97,10 @@ This is a tested hackathon MVP. Production rollout still needs a real supplier p
 
 ## Submission and credits
 
+- [CALL-E contribution PR #664](https://github.com/CALLE-AI/awesome-phone-call-agents/pull/664)
+- [Product brief](docs/pitch/OffHire-Product-Brief.pdf) · [Editable pitch deck](docs/pitch/OffHire-Pitch.pptx)
 - [Demo narration and recording guide](docs/video-script.md)
+- [Timed walkthrough narration](docs/walkthrough-assembly.md)
 - [Devpost draft](docs/devpost.md)
 - [Submission checklist](docs/submission-checklist.md)
 - [Specific CALL-E feedback](docs/call-e-feedback.md)

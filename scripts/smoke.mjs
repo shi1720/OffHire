@@ -72,7 +72,7 @@ ok(invoice.body.flagged === true, "invoice discrepancy flagged");
 const badDate = await request(`rentals/${rental.id}/invoice`, {
   billedThrough: "2026-02-31",
 });
-ok(badDate.status >= 400, "impossible date rejected");
+ok(badDate.status === 400, "impossible date rejected");
 const recorded = await request(`rentals/${rental.id}/record`, {
   action: "collected",
   note: "Synthetic QA: site lead recorded physical pickup.",
