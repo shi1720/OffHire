@@ -164,6 +164,7 @@ export type DeskState = {
     liveEnabled: boolean;
     owner: boolean;
     signedIn: boolean;
+    authProvider?: "firebase" | "sites";
     email: string | null;
     remainingCalls: number;
     callLimit: number;

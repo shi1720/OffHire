@@ -1,0 +1,15 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "offhire_jobs",
+      "fieldPath": "payload",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "offhire_rentals",
+      "fieldPath": "payload",
+      "indexes": []
+    }
+  ]
+}

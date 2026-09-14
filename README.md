@@ -12,7 +12,7 @@ The memorable case: **“We'll pick it up tomorrow” leaves billing unconfirmed
 
 [Hosted application](https://offhire-shivam.sg127977958.chatgpt.site) — currently owner-private; public judge access is pending approval. The local demo below is available to everyone.
 
-**Validation status:** the offline regression suite and local HTTP/D1 workflow pass. A real CALL-E owned-number test has not yet been conducted; synthetic transcripts are labeled throughout.
+**Validation status:** the offline regression suite and local HTTP/D1 workflow pass. The Firebase standalone build and 51 Firestore/auth/HTTP emulator checks also pass. A real CALL-E owned-number test has not yet been conducted; synthetic transcripts are labeled throughout.
 
 The application opens in a **clearly labeled demo workspace**. The businesses, rental records, rates, transcripts and outcomes are synthetic. Rehearsals exercise the same decision engine as live calls and never dial a phone.
 
@@ -82,7 +82,7 @@ The pilot hypothesis is **$99/company/month plus measured CALL-E usage at cost**
 
 ## Architecture and operating limits
 
-React 19, TypeScript and Vinext on a Cloudflare-compatible Worker; D1 persistence with schema-only Drizzle migrations; the official CALL-E TypeScript SDK; Radix dialog primitives and Lucide icons. [Architecture](docs/architecture.md)
+React 19 and TypeScript, with a Firebase deployment path using Next.js, Cloud Run, Firestore and Google sign-in. The original Sites/Vinext Worker path retains D1 persistence with schema-only Drizzle migrations; the official CALL-E TypeScript SDK; Radix dialog primitives and Lucide icons. [Architecture](docs/architecture.md)
 
 - Server-enforced ownership, exact destination allowlist, business hours for real suppliers, explicit plan approval and 15-minute grants.
 - Durable account lock, one budget reservation per job, atomic compare-and-swap state updates and monotonic terminal receipts.
@@ -108,3 +108,7 @@ This is a tested hackathon MVP. Production rollout still needs a real supplier p
 - [License](LICENSE): MIT, © 2026 Shivam Gupta.
 
 Shivam Gupta is the project owner and builder. The application uses open-source libraries and an AI-assisted development workflow. Third-party trademarks belong to their owners. All demo supplier names and scenarios are fictional.
+
+## Firebase deployment
+
+[Exact Firebase Hosting, Cloud Run, Firestore and Google sign-in setup](docs/firebase-deployment.md). Build with `npm run build:firebase`. This deployment option has been tested locally; cloud resources and the `offhire` site ID have not been provisioned.

@@ -14,12 +14,11 @@ import { createCall, readCall } from "./provider";
 import {
   compareAndSaveJob,
   releaseTerminalLock,
-  database,
+  claimDispatch,
+  ensureWorkspace,
   getJob,
   getRental,
   jobsFor,
-  jobStatement,
-  rentalStatement,
   recordAudit,
   saveJob,
   setting,
@@ -71,42 +70,8 @@ export async function initializeWorkspace(
   id: string,
   mode: "demo" | "live",
 ): Promise<void> {
-  const existing = await database()
-    .prepare("SELECT id FROM workspaces WHERE id = ?")
-    .bind(id)
-    .first();
-  if (existing) return;
-  const date = new Date().toISOString();
-  const batch = [
-    database()
-      .prepare(
-        "INSERT OR IGNORE INTO workspaces (id,mode,created_at,expires_at) VALUES (?,?,?,?)",
-      )
-      .bind(
-        id,
-        mode,
-        date,
-        mode === "demo"
-          ? new Date(Date.now() + 7 * 86400000).toISOString()
-          : null,
-      ),
-  ];
-  if (mode === "demo") {
-    const rentals = demoRentals(id);
-    batch.push(
-      ...rentals.map(rentalStatement),
-      ...seedJobs(rentals).map(jobStatement),
-    );
-  }
-  try {
-    await database().batch(batch);
-  } catch (error) {
-    const found = await database()
-      .prepare("SELECT id FROM workspaces WHERE id=?")
-      .bind(id)
-      .first();
-    if (!found) throw error;
-  }
+  const rentals = mode === "demo" ? demoRentals(id) : [];
+  await ensureWorkspace(id, mode, rentals, seedJobs(rentals));
 }
 export async function prepareJob(
   r: Rental,
@@ -282,47 +247,6 @@ export async function dispatchJob(job: Job, actor: string): Promise<Job> {
       "A newer call already confirmed this cutoff. Review the receipt instead of calling again.",
       409,
     );
-  // Account-wide lock survives worker/browser restarts. Unknown submissions keep it.
-  await database()
-    .prepare(
-      "INSERT OR IGNORE INTO dispatch_locks (id,job_id) VALUES ('calle-account',?)",
-    )
-    .bind(job.id)
-    .run();
-  const lock = await database()
-    .prepare("SELECT job_id FROM dispatch_locks WHERE id='calle-account'")
-    .first<{ job_id: string }>();
-  if (lock?.job_id !== job.id)
-    throw new ServiceError(
-      "Another live call is still active or awaiting reconciliation. Finish it before calling again.",
-      409,
-    );
-  // One immutable budget reservation per job; duplicate requests cannot consume
-  // another unit and concurrent jobs cannot exceed the account cap.
-  const limit = numberSetting("OFFHIRE_CALL_LIMIT", 5);
-  await database()
-    .prepare(
-      "INSERT OR IGNORE INTO usage_limits (id,used) SELECT ?,1 WHERE (SELECT COUNT(*) FROM usage_limits) < ?",
-    )
-    .bind(job.id, limit)
-    .run();
-  const reservation = await database()
-    .prepare("SELECT id FROM usage_limits WHERE id=?")
-    .bind(job.id)
-    .first();
-  if (!reservation) {
-    await database()
-      .prepare(
-        "DELETE FROM dispatch_locks WHERE id='calle-account' AND job_id=?",
-      )
-      .bind(job.id)
-      .run();
-    throw new ServiceError(
-      "The configured live-call budget is used. Review usage before increasing the server limit.",
-      409,
-    );
-  }
-
   const next = {
     ...job,
     status: "dispatching" as const,
@@ -330,21 +254,24 @@ export async function dispatchJob(job: Job, actor: string): Promise<Job> {
     error: null,
     updatedAt: new Date().toISOString(),
   };
-  // Compare-and-swap prevents simultaneous button presses from changing the grant
-  // or reserving another invocation with the same job. Provider key is also stable.
-  const claimed = await database()
-    .prepare(
-      "UPDATE jobs SET status='dispatching',payload=?,updated_at=? WHERE id=? AND payload=? AND json_extract(payload, '$.grantExpiresAt') > ?",
-    )
-    .bind(
-      JSON.stringify(next),
-      next.updatedAt,
-      job.id,
-      JSON.stringify(job),
-      next.updatedAt,
-    )
-    .run();
-  if (!claimed.meta.changes) {
+  // The repository owns the account-wide lock, immutable budget reservation,
+  // and saved-payload claim. Provider requests only follow a winning claim.
+  const claimed = await claimDispatch(
+    job,
+    next,
+    numberSetting("OFFHIRE_CALL_LIMIT", 5),
+  );
+  if (claimed === "busy")
+    throw new ServiceError(
+      "Another live call is still active or awaiting reconciliation. Finish it before calling again.",
+      409,
+    );
+  if (claimed === "budget_exhausted")
+    throw new ServiceError(
+      "The configured live-call budget is used. Review usage before increasing the server limit.",
+      409,
+    );
+  if (claimed !== "claimed") {
     const fresh = await getJob(job.id, job.workspaceId);
     if (fresh) await recoverDispatching(fresh);
     await releaseTerminalLock(job.id);

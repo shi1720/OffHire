@@ -1,4 +1,5 @@
 "use client";
+import { OperatorSignIn } from "@/components/operator-sign-in";
 import {
   useCallback,
   useEffect,
@@ -529,12 +530,7 @@ export default function Home() {
                 The public demo uses fictional rentals. Live calls and real
                 rental records are restricted to approved operators.
               </p>
-              <a
-                className="button primary"
-                href="/signin-with-chatgpt?return_to=/%3Fmode%3Dlive"
-              >
-                Sign in with ChatGPT
-              </a>
+              <OperatorSignIn />
               <button className="button" onClick={() => changeMode("demo")}>
                 Return to demo
               </button>
@@ -1203,6 +1199,21 @@ export default function Home() {
                 </section>
                 <section className="content-panel padded">
                   <h2>Workspace mode</h2>
+                  {state.connection.authProvider === "firebase" &&
+                    state.connection.signedIn && (
+                      <button
+                        className="button"
+                        disabled={!!busy}
+                        onClick={() =>
+                          act("signout", async () => {
+                            await api("auth/logout", {});
+                            window.location.assign("/");
+                          })
+                        }
+                      >
+                        Sign out
+                      </button>
+                    )}
                   <button
                     className={`mode-card ${mode === "demo" ? "selected" : ""}`}
                     onClick={() => changeMode("demo")}

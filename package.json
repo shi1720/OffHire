@@ -17,7 +17,11 @@
     "setup": "node scripts/setup.mjs",
     "test:unit": "tsx --test tests/*.test.ts",
     "test:integration": "node tests/integration/regression.mjs",
-    "test:smoke": "node scripts/smoke.mjs"
+    "test:smoke": "node scripts/smoke.mjs",
+    "build:firebase": "node scripts/build-firebase.mjs",
+    "start:firebase": "OFFHIRE_RUNTIME=firebase node .next/standalone/server.js",
+    "dev:firebase": "OFFHIRE_RUNTIME=firebase next dev --webpack",
+    "test:firebase": "node scripts/test-firebase.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
@@ -30,6 +34,8 @@
     "date-fns": "^4.4.0",
     "drizzle-orm": "0.45.2",
     "embla-carousel-react": "^8.6.0",
+    "firebase": "^12.19.0",
+    "firebase-admin": "^14.4.0",
     "input-otp": "^1.4.2",
     "lucide-react": "^1.31.0",
     "next": "16.3.4",
@@ -73,6 +79,9 @@
   "overrides": {
     "miniflare": {
       "sharp": "0.35.4"
+    },
+    "gaxios": {
+      "uuid": "11.1.1"
     }
   }
 }

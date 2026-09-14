@@ -3,7 +3,6 @@ import { rentalInput, type Rental, type Scenario } from "@/lib/offhire/types";
 import { demoRentals } from "@/lib/offhire/fixtures";
 import { invoiceReview } from "@/lib/offhire/decision";
 import {
-  database,
   getJob,
   getRental,
   jobsFor,
@@ -12,8 +11,12 @@ import {
   setting,
   numberSetting,
   recordAudit,
-  rentalStatement,
-  jobStatement,
+  getJobByCallId,
+  hasWebhookEvent,
+  recordWebhookEvent,
+  usageCount,
+  auditFor,
+  resetWorkspace,
 } from "@/lib/server/store";
 import {
   dispatchJob,
@@ -35,7 +38,7 @@ const json = (
   Response.json(data, {
     status,
     headers: {
-      "Cache-Control": "no-store",
+      "Cache-Control": "private, no-store",
       "X-Content-Type-Options": "nosniff",
       ...headers,
     },
@@ -45,9 +48,19 @@ const modeSchema = z.enum(["demo", "live"]);
 async function context(request: Request) {
   const url = new URL(request.url);
   const mode = modeSchema.parse(url.searchParams.get("mode") || "demo");
-  const userId = request.headers.get("oai-authenticated-user-id");
-  const email = request.headers.get("oai-authenticated-user-email") || null;
+  const isFirebase = setting("OFFHIRE_RUNTIME") === "firebase";
+  const auth = isFirebase
+    ? await import("@/lib/server/firebase-session")
+    : null;
+  const claims = auth ? await auth.firebaseIdentity(request) : null;
+  const userId = auth
+    ? claims?.uid || null
+    : request.headers.get("oai-authenticated-user-id");
+  const email = auth
+    ? claims?.email || null
+    : request.headers.get("oai-authenticated-user-email") || null;
   const owner =
+    (!auth || (!!claims && auth.allowedOperator(claims))) &&
     !!userId &&
     !!email &&
     setting("OFFHIRE_OWNER_EMAILS")
@@ -62,15 +75,36 @@ async function context(request: Request) {
         : "Sign in to access the live workspace.",
       403,
     );
-  const cookie = request.headers
-    .get("cookie")
-    ?.match(/(?:^|;\s*)offhire_session=([a-f0-9]{64})(?:;|$)/)?.[1];
+  const cookie = auth
+    ? auth.sessionCookie(request).match(/^demo\.([a-f0-9]{64})$/)?.[1]
+    : request.headers
+        .get("cookie")
+        ?.match(/(?:^|;\s*)offhire_session=([a-f0-9]{64})(?:;|$)/)?.[1];
+  const signedInDemo =
+    auth && claims
+      ? Array.from(
+          new Uint8Array(
+            await crypto.subtle.digest(
+              "SHA-256",
+              new TextEncoder().encode(claims.uid),
+            ),
+          ),
+        )
+          .map((n) => n.toString(16).padStart(2, "0"))
+          .join("")
+      : null;
   const session =
+    signedInDemo ||
     cookie ||
     Array.from(crypto.getRandomValues(new Uint8Array(32)))
       .map((n) => n.toString(16).padStart(2, "0"))
       .join("");
-  const workspaceId = mode === "live" ? "live-workspace" : `demo-${session}`;
+  const workspaceId =
+    mode === "live"
+      ? "live-workspace"
+      : signedInDemo
+        ? `demo-user-${signedInDemo}`
+        : `demo-${session}`;
   await initializeWorkspace(workspaceId, mode);
   return {
     mode,
@@ -79,9 +113,12 @@ async function context(request: Request) {
     email,
     signedIn: !!userId,
     actor: mode === "demo" ? "Demo operator" : email!,
-    cookie: cookie
-      ? null
-      : `offhire_session=${session}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800${url.protocol === "https:" ? "; Secure" : ""}`,
+    cookie:
+      cookie || signedInDemo
+        ? null
+        : auth
+          ? auth.firebaseCookie(`demo.${session}`, 604800)
+          : `offhire_session=${session}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800${url.protocol === "https:" ? "; Secure" : ""}`,
   };
 }
 async function body(request: Request) {
@@ -126,23 +163,14 @@ async function webhook(request: Request, token: string) {
     .parse(await body(request));
   if (request.headers.get("CALL-E-Event-Id") !== event.id)
     throw new ServiceError("Event ID mismatch.");
-  if (
-    await database()
-      .prepare("SELECT id FROM events WHERE id=?")
-      .bind(event.id)
-      .first()
-  )
+  if (await hasWebhookEvent(event.id))
     return json({ received: true, duplicate: true });
-  const row = await database()
-    .prepare("SELECT payload FROM jobs WHERE call_id=? AND mode='live'")
-    .bind(event.data.id)
-    .first<{ payload: string }>();
-  if (!row)
+  const job = await getJobByCallId(event.data.id);
+  if (!job)
     throw new ServiceError(
       "The call record is not yet available. Retry delivery.",
       503,
     );
-  const job = JSON.parse(row.payload);
   const reconciled = await refreshJob(job, true);
   // Unsigned body data never updates business fields. Authenticated GET must succeed.
   if (
@@ -153,12 +181,7 @@ async function webhook(request: Request, token: string) {
       "Call verification is pending. Retry delivery.",
       503,
     );
-  await database()
-    .prepare(
-      "INSERT OR IGNORE INTO events (id,job_id,created_at) VALUES (?,?,?)",
-    )
-    .bind(event.id, job.id, new Date().toISOString())
-    .run();
+  await recordWebhookEvent(event.id, job.id);
   return json({ received: true });
 }
 async function handler(request: Request) {
@@ -172,7 +195,49 @@ async function handler(request: Request) {
       path[1] === "calle"
     )
       return await webhook(request, path[2] || "");
-    if (request.method === "POST") sameOrigin(request);
+    const isFirebase = setting("OFFHIRE_RUNTIME") === "firebase";
+    if (request.method === "POST") {
+      if (isFirebase)
+        (await import("@/lib/server/firebase-session")).requireFirebaseOrigin(
+          request,
+        );
+      else sameOrigin(request);
+    }
+    if (path[0] === "auth") {
+      if (request.method === "GET" && path[1] === "config") {
+        if (!isFirebase) return json({ provider: "sites" });
+        const projectId =
+          setting("GOOGLE_CLOUD_PROJECT") || setting("GCLOUD_PROJECT");
+        const apiKey = setting("FIREBASE_WEB_API_KEY");
+        return json({
+          provider: "firebase",
+          configured: !!projectId && !!apiKey,
+          firebase: {
+            projectId,
+            apiKey,
+            authDomain: `${projectId}.firebaseapp.com`,
+          },
+        });
+      }
+      if (isFirebase && request.method === "POST") {
+        const auth = await import("@/lib/server/firebase-session");
+        if (path[1] === "session") {
+          const data = await body(request);
+          const session = await auth.createOperatorSession(
+            request,
+            data.idToken,
+          );
+          return json({ signedIn: true }, 200, {
+            "Set-Cookie": auth.firebaseCookie(session, 86400),
+          });
+        }
+        if (path[1] === "logout")
+          return json({ signedIn: false }, 200, {
+            "Set-Cookie": auth.firebaseCookie("", 0),
+          });
+      }
+      throw new ServiceError("Not found.", 404);
+    }
     const ctx = await context(request);
     const response = (data: unknown, status = 200) =>
       json(data, status, ctx.cookie ? { "Set-Cookie": ctx.cookie } : {});
@@ -180,9 +245,7 @@ async function handler(request: Request) {
       const [rentals, jobs, used] = await Promise.all([
         rentalsFor(ctx.workspaceId),
         jobsFor(ctx.workspaceId),
-        database()
-          .prepare("SELECT COUNT(*) as used FROM usage_limits")
-          .first<{ used: number }>(),
+        usageCount(),
       ]);
       const recovered = await Promise.all(jobs.map(recoverDispatching));
       return response({
@@ -194,10 +257,11 @@ async function handler(request: Request) {
           liveEnabled: setting("OFFHIRE_ENABLE_LIVE") === "true",
           owner: ctx.owner,
           signedIn: ctx.signedIn,
+          authProvider: isFirebase ? "firebase" : "sites",
           email: ctx.owner ? ctx.email : null,
           remainingCalls: Math.max(
             0,
-            numberSetting("OFFHIRE_CALL_LIMIT", 5) - (used?.used ?? 0),
+            numberSetting("OFFHIRE_CALL_LIMIT", 5) - used,
           ),
           callLimit: numberSetting("OFFHIRE_CALL_LIMIT", 5),
         },
@@ -206,12 +270,7 @@ async function handler(request: Request) {
     if (request.method === "GET" && path[0] === "export") {
       const rentals = await rentalsFor(ctx.workspaceId);
       const jobs = await jobsFor(ctx.workspaceId);
-      const logs = await database()
-        .prepare(
-          "SELECT action,detail,created_at,rental_id FROM audit WHERE workspace_id=? ORDER BY created_at DESC LIMIT 500",
-        )
-        .bind(ctx.workspaceId)
-        .all();
+      const logs = await auditFor(ctx.workspaceId, 500);
       return new Response(
         JSON.stringify(
           {
@@ -225,7 +284,7 @@ async function handler(request: Request) {
                 : "Supplier-reported evidence, not invoice-verified savings or an official supplier document.",
             rentals,
             jobs: jobs.map(publicJob),
-            audit: logs.results,
+            audit: logs,
           },
           null,
           2,
@@ -234,19 +293,13 @@ async function handler(request: Request) {
           headers: {
             "Content-Type": "application/json",
             "Content-Disposition": `attachment; filename="offhire-${ctx.mode}-evidence.json"`,
-            "Cache-Control": "no-store",
+            "Cache-Control": "private, no-store",
           },
         },
       );
     }
     if (request.method === "GET" && path[0] === "audit") {
-      const rows = await database()
-        .prepare(
-          "SELECT action,detail,created_at,rental_id FROM audit WHERE workspace_id=? ORDER BY created_at DESC LIMIT 100",
-        )
-        .bind(ctx.workspaceId)
-        .all();
-      return response({ events: rows.results });
+      return response({ events: await auditFor(ctx.workspaceId, 100) });
     }
     if (request.method !== "POST") throw new ServiceError("Not found.", 404);
     const data = await body(request);
@@ -375,19 +428,7 @@ async function handler(request: Request) {
       if (ctx.mode !== "demo")
         throw new ServiceError("Only a demo workspace can be reset.", 403);
       const rentals = demoRentals(ctx.workspaceId);
-      await database().batch([
-        database()
-          .prepare("DELETE FROM jobs WHERE workspace_id=?")
-          .bind(ctx.workspaceId),
-        database()
-          .prepare("DELETE FROM rentals WHERE workspace_id=?")
-          .bind(ctx.workspaceId),
-        database()
-          .prepare("DELETE FROM audit WHERE workspace_id=?")
-          .bind(ctx.workspaceId),
-        ...rentals.map(rentalStatement),
-        ...seedJobs(rentals).map(jobStatement),
-      ]);
+      await resetWorkspace(ctx.workspaceId, rentals, seedJobs(rentals));
       return response({ reset: true });
     }
     if (path[0] === "connection" && path[1] === "verify") {
@@ -412,6 +453,11 @@ async function handler(request: Request) {
       );
     if (error instanceof ServiceError)
       return json({ error: error.message }, error.status);
+    if (setting("OFFHIRE_RUNTIME") === "firebase") {
+      const { AuthError } = await import("@/lib/server/firebase-session");
+      if (error instanceof AuthError)
+        return json({ error: error.message }, error.status);
+    }
     console.error(
       "OffHire request failed",
       error instanceof Error ? error.name : "UnknownError",

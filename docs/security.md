@@ -18,8 +18,12 @@ Uncertain creation holds account capacity. Never manually clear its lock merely 
 
 ## Retention and production readiness
 
-The seven-day demo cookie expiry does not delete D1 rows. Production retention/erasure, backups, monitoring, abuse controls, incident response, supplier consent processes and written operating procedures remain pilot requirements. Voice/audio retention is controlled by CALL-E; this app stores returned transcripts and evidence, not a separate call-audio recording.
+The seven-day demo cookie expiry does not delete D1 rows or Firestore documents. Production retention/erasure, backups, monitoring, abuse controls, incident response, supplier consent processes and written operating procedures remain pilot requirements. Voice/audio retention is controlled by CALL-E; this app stores returned transcripts and evidence, not a separate call-audio recording.
 
 User-entered collection and written-confirmation notes are attestations, not automatically verified supplier documents. The final invoice review is a date comparison only; it does not interpret contract terms or prove an overcharge. Use fictional details in the public demo.
 
 No real supplier/customer pilot or CALL-E owned-number proof is claimed until separately recorded in the submission status.
+
+## Firebase deployment
+
+The Firebase build ignores caller-supplied Sites identity headers. Live workspace access requires a revocation-checked Firebase session cookie, verified Google identity and exact server email allowlist. Session creation requires fresh authentication and a configured Origin match. Firebase Hosting forwards the `__session` cookie; anonymous demo and authenticated demo namespaces are distinct. Cloud Run uses an attached service account for Firestore/Auth and a per-secret grant for CALL-E. See [deployment commands](firebase-deployment.md).

@@ -48,3 +48,11 @@ next-env.d.ts
 
 !.env.example
 *.tsbuildinfo
+
+# Firebase local state and emulator logs
+.firebase/
+.firebaserc
+*-debug.log
+
+.deploy/
+tests/firebase-auth/.runtime/
