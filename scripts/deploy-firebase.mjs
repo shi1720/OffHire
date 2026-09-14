@@ -31,11 +31,18 @@ export function parseArgs(args) {
   const options = {};
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (["--yes", "--help"].includes(arg)) options[arg.slice(2)] = true;
+    if (["--yes", "--help", "--enable-live", "--replace-key"].includes(arg))
+      options[arg.slice(2)] = true;
     else if (
-      ["--project", "--site", "--owner", "--app", "--billing-account"].includes(
-        arg,
-      )
+      [
+        "--project",
+        "--site",
+        "--owner",
+        "--app",
+        "--billing-account",
+        "--phones",
+        "--call-limit",
+      ].includes(arg)
     ) {
       const value = args[++i];
       if (!value || value.startsWith("--"))
@@ -47,6 +54,144 @@ export function parseArgs(args) {
       );
   }
   return options;
+}
+
+// Matches the SDK's read-only connection check. Never creates a call.
+export async function verifyCalleKey(key, request = fetch) {
+  if (!key || /\s/.test(key))
+    throw new Error("Enter a nonempty CALL-E SDK API key without whitespace.");
+  let response;
+  try {
+    response = await request("https://api.heycall-e.com/v1/goals?limit=1", {
+      method: "GET",
+      headers: { Authorization: `Bearer ${key}` },
+      redirect: "error",
+      signal: AbortSignal.timeout(30000),
+    });
+  } catch {
+    throw new Error(
+      "CALL-E connection check failed. Check network access and retry; no key was stored and no call was placed.",
+    );
+  }
+  if (!response.ok)
+    throw new Error(
+      `CALL-E rejected the connection check (HTTP ${response.status}). Check the SDK API key at https://dashboard.heycall-e.com/account/api-keys. CLI browser authorization is a separate credential. No call was placed.`,
+    );
+  const payload = await response.json().catch(() => null);
+  if (!Array.isArray(payload?.data))
+    throw new Error(
+      "CALL-E returned an unexpected connection response; live setup stopped.",
+    );
+}
+
+export async function configureLive(
+  io,
+  gc,
+  { options, env, project, runtime },
+) {
+  const current = (name) => env.find((item) => item.name === name)?.value;
+  const input =
+    options.phones ||
+    (await io.ask(
+      "Owned or explicitly authorized phone numbers (E.164, comma-separated)",
+      current("OFFHIRE_ALLOWED_PHONES") || "",
+      options.yes,
+    ));
+  const phones = [...new Set(input.split(",").map((phone) => phone.trim()))];
+  if (
+    !phones.length ||
+    phones.some((phone) => !/^\+[1-9]\d{7,14}$/.test(phone))
+  )
+    throw new Error(
+      "Use exact authorized E.164 numbers, e.g. +14155550123, without spaces or punctuation inside a number.",
+    );
+  const limit =
+    options["call-limit"] ||
+    (await io.ask(
+      "Total call-attempt budget (existing reservations are not reset)",
+      current("OFFHIRE_CALL_LIMIT") || "5",
+      options.yes,
+    ));
+  if (!/^[1-9]\d*$/.test(limit) || !Number.isSafeInteger(Number(limit)))
+    throw new Error("Call budget must be a positive whole number.");
+
+  const binding = env.find((item) => item.name === "CALLE_API_KEY");
+  const ref = binding?.valueFrom?.secretKeyRef;
+  // Only reuse this project's standard secret binding. Other bindings can be
+  // replaced explicitly with a dashboard key, without reading secret payloads.
+  let version =
+    ref?.name === "CALLE_API_KEY" && /^(?:[1-9]\d*|latest)$/.test(ref.key)
+      ? ref.key
+      : null;
+  if (!version || options["replace-key"]) {
+    if (options.yes && (options["replace-key"] || !binding?.value))
+      throw new Error(
+        "A CALL-E key is required. Rerun --enable-live interactively to paste it at the hidden prompt. Never put the key in a command argument.",
+      );
+    io.log(
+      "Use a SDK API key from https://dashboard.heycall-e.com/account/api-keys. The key stays on the server.",
+    );
+    let key =
+      !options["replace-key"] && binding?.value
+        ? binding.value
+        : await io.secret();
+    try {
+      await io.verifyKey(key);
+      const secrets = await gc(
+        ["secrets", "list", "--filter=name:CALLE_API_KEY"],
+        true,
+      );
+      if (
+        !secrets.some((secret) =>
+          secret.name?.endsWith("/secrets/CALLE_API_KEY"),
+        )
+      )
+        await gc([
+          "secrets",
+          "create",
+          "CALLE_API_KEY",
+          "--replication-policy=automatic",
+        ]);
+      const created = await io.storeKey(project, key);
+      version = created.name?.match(
+        /\/secrets\/CALLE_API_KEY\/versions\/([1-9]\d*)$/,
+      )?.[1];
+      if (!version)
+        throw new Error(
+          "Secret Manager did not return a valid CALL-E secret version; deployment stopped.",
+        );
+    } finally {
+      key = undefined;
+    }
+    io.log(
+      "CALL-E authentication verified without dialing; key stored in Secret Manager.",
+    );
+  } else {
+    io.log(
+      "Reusing the deployed CALL-E secret. Verify its authentication from Connection after deployment.",
+    );
+  }
+  await gc([
+    "secrets",
+    "add-iam-policy-binding",
+    "CALLE_API_KEY",
+    `--member=serviceAccount:${runtime}`,
+    "--role=roles/secretmanager.secretAccessor",
+    "--condition=None",
+  ]);
+  return {
+    updates: {
+      OFFHIRE_ENABLE_LIVE: "true",
+      OFFHIRE_ALLOWED_PHONES: phones.join(","),
+      OFFHIRE_CALL_LIMIT: limit,
+    },
+    flags: {
+      "--update-secrets": { CALLE_API_KEY: `CALLE_API_KEY:${version}` },
+      ...(binding?.value !== undefined
+        ? { "--remove-env-vars": ["CALLE_API_KEY"] }
+        : {}),
+    },
+  };
 }
 
 function validate(kind, value, pattern) {
@@ -162,6 +307,13 @@ async function linkBillingAccount(io, gc, project, account) {
 // Injected I/O lets tests exercise first deploy, reruns and failure boundaries
 // without creating real cloud resources or reading developer credentials.
 export async function deploy(io, options = {}) {
+  if (
+    !options["enable-live"] &&
+    (options.phones || options["call-limit"] || options["replace-key"])
+  )
+    throw new Error(
+      "Use --enable-live with --phones, --call-limit or --replace-key.",
+    );
   const saved = io.read(STATE);
   const rc = io.read(".firebaserc");
   const config = io.read("firebase.json");
@@ -285,7 +437,7 @@ export async function deploy(io, options = {}) {
   }
   const billingAccount = await selectBillingAccount(io, gc, billing, options);
   io.log(
-    `\nDeploying OffHire\n  Project:  ${project}\n  URL:      ${origin}\n  Operator: ${owner}\n  Region:   ${REGION}\n  Billing:  ${billingAccount || "already enabled"}\n\nThis provisions the runtime/build identities and publishes the app using the selected billing account. First deploy starts with live calling disabled.\n`,
+    `\nDeploying OffHire\n  Project:  ${project}\n  URL:      ${origin}\n  Operator: ${owner}\n  Region:   ${REGION}\n  Billing:  ${billingAccount || "already enabled"}\n\nThis provisions the runtime/build identities and publishes the app using the selected billing account. ${options["enable-live"] ? "Live-call setup requested; no call will be placed by this command." : "Existing live settings are preserved; new services start with live calling disabled."}\n`,
   );
   io.save(STATE, { project, site, owner, ...(app ? { app } : {}) });
 
@@ -433,6 +585,9 @@ export async function deploy(io, options = {}) {
       "The existing Cloud Run service does not have the expected single-container configuration. It has not been redeployed.",
     );
   const env = containers[0]?.env || [];
+  const live = options["enable-live"]
+    ? await configureLive(io, gc, { options, env, project, runtime })
+    : null;
   const updates = {
     OFFHIRE_RUNTIME: "firebase",
     GOOGLE_CLOUD_PROJECT: project,
@@ -445,6 +600,7 @@ export async function deploy(io, options = {}) {
     ...(!env.some((item) => item.name === "OFFHIRE_CALL_LIMIT")
       ? { OFFHIRE_CALL_LIMIT: "5" }
       : {}),
+    ...live?.updates,
   };
   // Only non-secret app settings go into this file. update-env-vars preserves
   // CALL-E secrets, destination allowlists, budgets and current live settings.
@@ -453,6 +609,7 @@ export async function deploy(io, options = {}) {
       throw new Error("Invalid runtime configuration value.");
   io.save(".deploy/run-deploy-flags.json", {
     "--update-env-vars": updates,
+    ...live?.flags,
   });
   io.log(
     "Building and deploying Cloud Run (the first build can take several minutes)…",
@@ -482,9 +639,9 @@ export async function deploy(io, options = {}) {
     "--only",
     "firestore:rules,firestore:indexes,hosting:offhire",
   ]);
-  await io.verify(origin, project);
+  await io.verify(origin, project, { live: !!live });
   io.log(
-    `\nOffHire is hosted at ${origin}\nSign in with ${owner}.\nRun npm run deploy:firebase again to publish updates. CALL-E secret setup remains separate; this script never places a call.`,
+    `\nOffHire is hosted at ${origin}\nSign in with ${owner}.\n${live ? "Live calling is enabled. Open Connection → Live workspace → Verify connection, then create an owned-number roleplay and review its plan before choosing Place approved call." : "Run npm run deploy:firebase -- --enable-live to configure or update live calling."}\nRun npm run deploy:firebase again to publish updates. No phone call was placed by this script.`,
   );
   return { project, site, owner, app, url: origin };
 }
@@ -559,17 +716,28 @@ export async function requestFirebaseAuth(
   }
 }
 
-function command(binary, args, { capture = true, optional = false } = {}) {
+function command(
+  binary,
+  args,
+  { capture = true, optional = false, input, sensitive = false } = {},
+) {
   const result = spawnSync(binary, args, {
     cwd: ROOT,
     shell: false,
     encoding: "utf8",
     maxBuffer: 16 * 1024 * 1024,
-    stdio: capture ? ["inherit", "pipe", "pipe"] : "inherit",
+    stdio: capture
+      ? [input === undefined ? "inherit" : "pipe", "pipe", "pipe"]
+      : "inherit",
+    ...(input === undefined ? {} : { input }),
     env: { ...process.env, CLOUDSDK_CORE_DISABLE_PROMPTS: "1" },
   });
   if (result.error || result.status !== 0) {
     if (optional) return null;
+    if (sensitive)
+      throw new Error(
+        "Secret input/storage failed. Check Secret Manager permissions and rerun. No credential output was logged.",
+      );
     throw new Error(
       `${binary} ${args[0]} ${args[1] || ""} failed. ${result.error?.message || result.stderr?.trim() || "See command output above."}`,
     );
@@ -577,11 +745,34 @@ function command(binary, args, { capture = true, optional = false } = {}) {
   return result.stdout?.trim() || "";
 }
 
+export function readHiddenKey() {
+  if (!process.stdin.isTTY || process.platform === "win32")
+    throw new Error(
+      "Paste the CALL-E key from an interactive Google Cloud Shell or Mac/Linux terminal.",
+    );
+  process.stderr.write("CALL-E SDK API key (hidden; paste then press Enter): ");
+  try {
+    // Fixed shell code: the key is terminal input, never interpolated into code
+    // or passed in argv. read -s disables echo, including pasted characters.
+    return command(
+      "bash",
+      [
+        "-c",
+        "IFS= read -r -s OFFHIRE_SECRET_INPUT </dev/tty || exit 1; printf '%s' \"$OFFHIRE_SECRET_INPUT\"",
+      ],
+      { sensitive: true },
+    );
+  } finally {
+    process.stderr.write("\n");
+  }
+}
+
 export async function verifyHosted(
   origin,
   project,
   request = fetch,
   pause = delay,
+  expected = {},
 ) {
   let reason = "Hosting is not ready yet";
   for (let attempt = 0; attempt < 12; attempt++) {
@@ -613,7 +804,7 @@ export async function verifyHosted(
       const page = await get("/");
       if (!page.ok || !(await page.text()).includes("OffHire"))
         throw new Error("The app page did not render");
-      const rentals = await get("/api/rentals?mode=demo");
+      const rentals = await get("/api/state?mode=demo");
       const records = await rentals.json();
       if (
         !rentals.ok ||
@@ -622,6 +813,13 @@ export async function verifyHosted(
       )
         throw new Error(
           "The hosted app could not load its Firestore demo records",
+        );
+      if (
+        expected.live &&
+        (!records.connection?.configured || !records.connection?.liveEnabled)
+      )
+        throw new Error(
+          "The published revision does not yet have both the CALL-E key and live calling enabled",
         );
       return;
     } catch (error) {
@@ -638,7 +836,7 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   if (options.help) {
     console.log(
-      `Usage: npm run deploy:firebase [-- --project PROJECT_ID --site offhire --owner you@gmail.com]\n\nUses your existing Firebase project and Google sign-in. Creates/reuses runtime and build service accounts, discovers web config, authorizes the Hosting domain, and deploys Cloud Run + Firebase Hosting + Firestore rules.\n\nRequires Node 22.13+ and gcloud (preinstalled in Google Cloud Shell). Firebase CLI is downloaded through npx automatically. If billing is missing, choose the account holding your GCP credits in the script; it links and verifies it before continuing. Linking changes Firebase to Blaze. Credit coverage and expiry depend on your credit program. No npm ci or local Docker is needed to deploy.\n\nOptions: --project ID  --site ID  --owner EMAIL[,EMAIL]  --app WEB_APP_ID\n         --billing-account ACCOUNT_ID (required with --yes when billing is not enabled)\n         --yes (use supplied/saved settings without prompts; does not accept missing values)\n         --help\n\nSettings are saved in ignored .deploy/firebase-deploy.json. First deployment disables live calls. Redeployments preserve live flags, destination allowlists, and existing CALL-E secrets. Never put a secret in these options.`,
+      `Usage: npm run deploy:firebase [-- --project PROJECT_ID --site offhire --owner you@gmail.com]\n\nUses your existing Firebase project and Google sign-in. Creates/reuses runtime and build service accounts, discovers web config, authorizes the Hosting domain, and deploys Cloud Run + Firebase Hosting + Firestore rules.\n\nRequires Node 22.13+ and gcloud (preinstalled in Google Cloud Shell). Firebase CLI is downloaded through npx automatically. If billing is missing, choose the account holding your GCP credits in the script; it links and verifies it before continuing. Linking changes Firebase to Blaze. Credit coverage and expiry depend on your credit program. No npm ci or local Docker is needed to deploy.\n\nOptions: --project ID  --site ID  --owner EMAIL[,EMAIL]  --app WEB_APP_ID\n         --billing-account ACCOUNT_ID (required with --yes when billing is not enabled)\n         --yes (use supplied/saved settings without prompts; does not accept missing values)\n         --enable-live (configure CALL-E key, authorized phones and budget)\n         --phones +E164[,E164]  --call-limit NUMBER (with --enable-live)\n         --replace-key (with --enable-live; securely prompt for a new SDK key)\n         --help\n\nSettings are saved in ignored .deploy/firebase-deploy.json. First deployment disables live calls unless --enable-live is supplied. Live setup stores a key through a hidden terminal prompt, verifies authentication without dialing, and republishes the Hosting revision. Redeployments preserve live flags, destination allowlists, and existing CALL-E secrets. Never put a secret in these options.`,
     );
     return;
   }
@@ -687,6 +885,32 @@ async function main() {
         },
         log: console.log,
         pause: delay,
+        async secret() {
+          readline?.close();
+          readline = undefined;
+          return readHiddenKey();
+        },
+        verifyKey: verifyCalleKey,
+        async storeKey(project, key) {
+          return JSON.parse(
+            command(
+              "gcloud",
+              [
+                "secrets",
+                "versions",
+                "add",
+                "CALLE_API_KEY",
+                "--data-file=-",
+                `--project=${project}`,
+                "--quiet",
+                "--format=json",
+                "--no-log-http",
+                "--verbosity=error",
+              ],
+              { input: key, sensitive: true },
+            ),
+          );
+        },
         async ask(label, fallback, nonInteractive) {
           if (nonInteractive) {
             if (fallback) return fallback;
@@ -755,7 +979,8 @@ async function main() {
           ]);
           return requestFirebaseAuth(path, { token, body });
         },
-        verify: verifyHosted,
+        verify: (origin, project, expected) =>
+          verifyHosted(origin, project, fetch, delay, expected),
       },
       options,
     );

@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { verifyHosted } from '../../scripts/deploy-firebase.mjs';
 
 // Run only against a local production Next server connected to demo emulators.
 // The allowed operator email is synthetic and no CALL-E jobs are dispatched.
@@ -29,6 +30,9 @@ async function google(email,verified=true){
 const cfg=await api('/api/auth/config');const config=await cfg.json();
 assert.equal(config.provider,'firebase');assert.equal(config.firebase.projectId,'demo-offhire','Do not run HTTP integration against a real Firebase project');
 const account=await google(ownerEmail);
+await test('Deployment verifier uses the real production routes and Firestore demo state',async()=>{
+ await verifyHosted(base,'demo-offhire',fetch,async()=>{});
+});
 let cookie;
 await test('Production HTTP server mints operator cookie from emulator Google token',async()=>{
  const res=await api('/api/auth/session',{method:'POST',body:{idToken:account.idToken}});assert.equal(res.status,200,await res.text());

@@ -6,6 +6,8 @@ import {
   parseArgs,
   verifyHosted,
   requestFirebaseAuth,
+  configureLive,
+  verifyCalleKey,
 } from "../scripts/deploy-firebase.mjs";
 
 const project = "offhire-test-123";
@@ -19,6 +21,209 @@ const options = {
   yes: true,
 };
 const clone = (value) => structuredClone(value);
+
+test("live CLI options parse, but secret arguments are not accepted", () => {
+  assert.deepEqual(
+    parseArgs([
+      "--enable-live",
+      "--phones",
+      "+14155550123",
+      "--call-limit",
+      "5",
+      "--replace-key",
+    ]),
+    {
+      "enable-live": true,
+      phones: "+14155550123",
+      "call-limit": "5",
+      "replace-key": true,
+    },
+  );
+  assert.throws(() => parseArgs(["--api-key", "fake-key"]), /Unknown option/);
+});
+
+test("live setup verifies key, pins secret version, updates settings and publishes before readiness verification", async () => {
+  const f = fixture();
+  await deploy(f.io, {
+    ...options,
+    yes: false,
+    "enable-live": true,
+    phones: "+14155550123,+442079460123,+14155550123",
+  });
+  const flags = f.files[".deploy/run-deploy-flags.json"];
+  assert.equal(flags["--update-env-vars"].OFFHIRE_ENABLE_LIVE, "true");
+  assert.equal(
+    flags["--update-env-vars"].OFFHIRE_ALLOWED_PHONES,
+    "+14155550123,+442079460123",
+  );
+  assert.deepEqual(flags["--update-secrets"], {
+    CALLE_API_KEY: "CALLE_API_KEY:3",
+  });
+  const at = (label) => f.events.findIndex((event) => event[0] === label);
+  assert.ok(at("verify-key") < at("store-key"));
+  assert.ok(
+    at("store-key") <
+      f.events.findIndex(
+        (event) => event[1] === "run" && event[2] === "deploy",
+      ),
+  );
+  assert.equal(f.events.at(-1)[0], "verify");
+  assert.ok(
+    !JSON.stringify([f.files, f.events, f.logs, f.writes]).includes(
+      "fake-sdk-test-key",
+    ),
+  );
+  assert.match(f.logs.at(-1), /Live calling is enabled/);
+  // Rerun reuses the secret and the budget; no extra secret version or key prompt.
+  f.io.secret = async () => assert.fail("must reuse configured secret");
+  await deploy(f.io, { ...options, "enable-live": true });
+  assert.equal(f.events.filter((event) => event[0] === "store-key").length, 1);
+});
+
+test("live setup rejects invalid destinations and budgets before touching secrets or deploying", async () => {
+  for (const input of [
+    { phones: "14155550123" },
+    { phones: "+1415*" },
+    { phones: "+14155550123, " },
+    { phones: "+14155550123", "call-limit": "0" },
+    { phones: "+14155550123", "call-limit": "1.5" },
+  ]) {
+    const f = fixture();
+    await assert.rejects(
+      deploy(f.io, { ...options, "enable-live": true, ...input }),
+      /E.164|budget/,
+    );
+    assert.ok(
+      !f.events.some(
+        (event) =>
+          event[1] === "secrets" ||
+          event[0] === "store-key" ||
+          (event[1] === "run" && event[2] === "deploy"),
+      ),
+    );
+  }
+});
+
+test("live setup without an interactive key cannot silently enable a fresh service", async () => {
+  const f = fixture();
+  await assert.rejects(
+    deploy(f.io, { ...options, "enable-live": true, phones: "+14155550123" }),
+    /interactively/,
+  );
+  assert.ok(
+    !f.events.some((event) => event[1] === "run" && event[2] === "deploy"),
+  );
+  await assert.rejects(
+    deploy(f.io, { ...options, phones: "+14155550123" }),
+    /Use --enable-live/,
+  );
+});
+
+test("rejected CALL-E key stops before storage, live updates or publishing", async () => {
+  const f = fixture();
+  f.io.verifyKey = async () => {
+    throw new Error("Invalid SDK key");
+  };
+  await assert.rejects(
+    deploy(f.io, {
+      ...options,
+      yes: false,
+      "enable-live": true,
+      phones: "+14155550123",
+    }),
+    /Invalid SDK key/,
+  );
+  assert.ok(
+    !f.events.some(
+      (event) =>
+        event[0] === "store-key" ||
+        (event[1] === "run" && event[2] === "deploy"),
+    ),
+  );
+  assert.ok(!f.logs.some((line) => line.includes("Live calling is enabled")));
+});
+
+test("existing plaintext key is migrated to Secret Manager without appearing in saved flags", async () => {
+  const f = fixture();
+  const result = await configureLive(
+    f.io,
+    (args, json) => f.io.gc([...args, `--project=${project}`], json),
+    {
+      options: { yes: true, phones: "+14155550123" },
+      project,
+      runtime: `offhire-runtime@${project}.iam.gserviceaccount.com`,
+      env: [
+        { name: "CALLE_API_KEY", value: "fake-sdk-test-key" },
+        { name: "OFFHIRE_CALL_LIMIT", value: "8" },
+      ],
+    },
+  );
+  assert.equal(result.updates.OFFHIRE_CALL_LIMIT, "8");
+  assert.deepEqual(result.flags["--remove-env-vars"], ["CALLE_API_KEY"]);
+  assert.ok(!JSON.stringify(result).includes("fake-sdk-test-key"));
+});
+
+test("read-only CALL-E key check never follows redirects or creates calls", async () => {
+  const key = "fake-test-credential";
+  await verifyCalleKey(key, async (url, init) => {
+    assert.equal(url, "https://api.heycall-e.com/v1/goals?limit=1");
+    assert.equal(init.method, "GET");
+    assert.equal(init.redirect, "error");
+    assert.equal(init.headers.Authorization, `Bearer ${key}`);
+    assert.equal(init.body, undefined);
+    return Response.json({ object: "list", data: [], next_cursor: null });
+  });
+  await assert.rejects(
+    verifyCalleKey(key, async () =>
+      Response.json({ error: key }, { status: 401 }),
+    ),
+    (error) => !error.message.includes(key) && /HTTP 401/.test(error.message),
+  );
+  await assert.rejects(
+    verifyCalleKey(key, async () => {
+      throw new Error(key);
+    }),
+    (error) => !error.message.includes(key),
+  );
+  await assert.rejects(
+    verifyCalleKey(key, async () => Response.json({ status: "ok" })),
+    /unexpected connection response/,
+  );
+});
+
+test("live readiness rejects a published stale revision even when page and database work", async () => {
+  let ready = false;
+  const request = async (url) => {
+    if (url.endsWith("/api/health"))
+      return Response.json({ application: "offhire", status: "ok" });
+    if (url.endsWith("/api/auth/config"))
+      return Response.json({
+        provider: "firebase",
+        configured: true,
+        firebase: { projectId: project },
+      });
+    if (url.endsWith("/api/state?mode=demo"))
+      return Response.json({
+        rentals: [{ id: "test" }],
+        connection: { configured: ready, liveEnabled: true },
+      });
+    return new Response("<title>OffHire</title>");
+  };
+  await assert.rejects(
+    verifyHosted("https://offhire.web.app", project, request, async () => {}, {
+      live: true,
+    }),
+    /both the CALL-E key and live calling enabled/,
+  );
+  ready = true;
+  await verifyHosted(
+    "https://offhire.web.app",
+    project,
+    request,
+    async () => {},
+    { live: true },
+  );
+});
 
 // Fixtures follow the JSON envelopes returned by Firebase CLI 15.30.0 and
 // Cloud Run v1/gcloud. Unknown commands fail, so tests cannot call the cloud.
@@ -41,6 +246,7 @@ function fixture(overrides = {}) {
     roles: [],
     apps: [],
     service: null,
+    secrets: [],
     auth: {
       authorizedDomains: [
         `${project}.firebaseapp.com`,
@@ -65,6 +271,17 @@ function fixture(overrides = {}) {
     },
     log: (message) => logs.push(message),
     login: async () => {},
+    secret: async () => "fake-sdk-test-key",
+    verifyKey: async (key) => {
+      assert.equal(key, "fake-sdk-test-key");
+      events.push(["verify-key"]);
+    },
+    storeKey: async (selectedProject, key) => {
+      assert.equal(selectedProject, project);
+      assert.equal(key, "fake-sdk-test-key");
+      events.push(["store-key"]);
+      return { name: `projects/123/secrets/CALLE_API_KEY/versions/3` };
+    },
     pause: async (ms) => {
       events.push(["pause", ms]);
     },
@@ -156,6 +373,16 @@ function fixture(overrides = {}) {
         mutate("gc", args);
         return;
       }
+      if (starts(["secrets", "list"])) return clone(state.secrets);
+      if (starts(["secrets", "create"])) {
+        mutate("gc", args);
+        state.secrets.push({ name: `projects/123/secrets/CALLE_API_KEY` });
+        return;
+      }
+      if (starts(["secrets", "add-iam-policy-binding"])) {
+        mutate("gc", args);
+        return;
+      }
       if (starts(["run", "services", "list"]))
         return state.service ? [clone(state.service)] : [];
       if (starts(["run", "services", "describe"])) return clone(state.service);
@@ -166,6 +393,8 @@ function fixture(overrides = {}) {
           state.service?.spec?.template?.spec?.containers?.[0]?.env || [];
         const updates =
           files[".deploy/run-deploy-flags.json"]["--update-env-vars"];
+        const secretUpdates =
+          files[".deploy/run-deploy-flags.json"]["--update-secrets"] || {};
         state.service = {
           metadata: { name: "offhire" },
           spec: {
@@ -174,7 +403,20 @@ function fixture(overrides = {}) {
                 containers: [
                   {
                     env: [
-                      ...env.filter((item) => !(item.name in updates)),
+                      ...env.filter(
+                        (item) =>
+                          !(item.name in updates) &&
+                          !(item.name in secretUpdates),
+                      ),
+                      ...Object.entries(secretUpdates).map(([name, ref]) => ({
+                        name,
+                        valueFrom: {
+                          secretKeyRef: {
+                            name: ref.split(":")[0],
+                            key: ref.split(":")[1],
+                          },
+                        },
+                      })),
                       ...Object.entries(updates).map(([name, value]) => ({
                         name,
                         value,
@@ -253,8 +495,16 @@ function fixture(overrides = {}) {
       }
       return clone(state.auth);
     },
-    async verify(origin, expectedProject) {
+    async verify(origin, expectedProject, expected) {
       events.push(["verify", origin, expectedProject]);
+      if (expected?.live) {
+        const env = state.service.spec.template.spec.containers[0].env;
+        assert.equal(
+          env.find((item) => item.name === "OFFHIRE_ENABLE_LIVE").value,
+          "true",
+        );
+        assert.ok(env.find((item) => item.name === "CALLE_API_KEY").valueFrom);
+      }
       if (state.failVerify) throw new Error("Verification failed");
     },
   };
@@ -554,7 +804,7 @@ test("HTTP verification checks the served Firebase project and Firestore records
         configured: true,
         firebase: { projectId: project },
       });
-    if (url.endsWith("/api/rentals?mode=demo"))
+    if (url.endsWith("/api/state?mode=demo"))
       return Response.json({ rentals: [{ id: "demo-rental" }] });
     return new Response("<title>OffHire</title>");
   };
@@ -565,7 +815,7 @@ test("HTTP verification checks the served Firebase project and Firestore records
     async () => {},
   );
   assert.equal(calls.length, 4);
-  assert.ok(calls.some((url) => url.endsWith("/api/rentals?mode=demo")));
+  assert.ok(calls.some((url) => url.endsWith("/api/state?mode=demo")));
 });
 
 test("HTTP verification retries a stale revision and fails if the project never matches", async () => {

@@ -1,6 +1,6 @@
 # OffHire on Firebase — exact deployment commands
 
-Verified against official documentation on 14 September 2026. The Firebase adaptation is implemented in the repository. These are commands for Shivam to run; no Firebase or Google Cloud resources have been created or deployed by this task.
+Verified against official documentation on 14 September 2026. Shivam deployed the app at https://offhire.web.app using project offhire-prod-1b2d39. Public checks verified the page, Firebase configuration and Firestore demo. Live key/calling setup still requires the command below and a real owned-number test.
 
 ## One-command deployment for your existing Firebase project
 
@@ -31,13 +31,25 @@ cd offhire-firebase
 npm run deploy:firebase
 ```
 
-Future updates use `git pull` and `npm run deploy:firebase` again. Selection settings are saved in `.deploy/firebase-deploy.json`, excluded from Git and the cloud build. Existing CALL-E secrets, destination allowlists, budgets and live flags are preserved through partial environment updates. The first deployment defaults to live calls disabled and a five-call limit. The script never asks for a CALL-E key or places calls; use optional step 8 later.
+Future updates use `git pull` and `npm run deploy:firebase` again. Selection settings are saved in `.deploy/firebase-deploy.json`, excluded from Git and the cloud build. Existing CALL-E secrets, destination allowlists, budgets and live flags are preserved through partial environment updates. The first deployment defaults to live calls disabled and a five-call limit unless `--enable-live` is supplied.
+
+### Enable live calling
+
+In the same Cloud Shell checkout, run:
+
+```bash
+git pull --ff-only && npm run deploy:firebase -- --enable-live
+```
+
+The script asks for an owned/authorized E.164 phone number, total call-attempt budget and a [CALL-E SDK API key](https://dashboard.heycall-e.com/account/api-keys) at a hidden prompt. CLI browser authorization is separate from the SDK key. It validates a new key using the read-only goals endpoint, stores it in Secret Manager, grants runtime access, pins the secret version, enables live calling, rebuilds the service, republishes the Hosting revision and verifies live/key configuration at the public URL. No call is made during setup. Existing secret bindings and budgets can be reused. Use `--replace-key` with `--enable-live` for key rotation; never pass the key on the command line.
+
+Wait for **“Live calling is enabled”**, then follow the [owned-number test instructions](live-setup.md#test-the-deployed-app). Sign in as the configured Google operator, select Live workspace, verify the connection and review a fictional roleplay plan before placing the first call. This command replaces manual step 8 below as well. [Secret Manager stdin](https://docs.cloud.google.com/sdk/gcloud/reference/secrets/versions/add), [Cloud Run secret version pinning](https://docs.cloud.google.com/run/docs/configuring/services/secrets)
 
 `--app WEB_APP_ID` selects a particular Firebase web app. `--yes` suppresses script prompts using supplied/saved values; authenticate both CLIs first and supply `--owner` on a fresh unattended deployment. Also supply `--billing-account ACCOUNT_ID` if billing is not enabled. The script never silently moves an active project to a different billing account. Run `npm run deploy:firebase -- --help` for options. If a build or permission check fails, fix the reported error and rerun; no new project is created and existing resources are reused. Organization IAM restrictions can still require an administrator.
 
 The script deploys this repository's Firestore rules and indexes to the selected project and publishes the selected Hosting site. Use the Firebase project dedicated to OffHire. `offhire.web.app` is only available when your project owns the `offhire` Hosting site; the script stops if another project owns it.
 
-Twenty-nine fixture-based deployment tests cover provisioning, billing selection and propagation, reruns, credential preservation, Auth quota headers, API-enablement ordering, error redaction and deployment verification. These tests do not provision real Google Cloud resources. The script follows the official [Auth configuration API](https://docs.cloud.google.com/identity-platform/docs/reference/rest/v2/projects/updateConfig), [Google provider configuration API](https://docs.cloud.google.com/identity-platform/docs/reference/rest/v2/projects.defaultSupportedIdpConfigs/get), and [gcloud structured flag-file format](https://docs.cloud.google.com/sdk/gcloud/reference/topic/flags-file).
+Deployment tests cover provisioning, billing selection and propagation, reruns, credential preservation, Auth quota headers, API-enablement ordering, key validation, live settings, secret version pinning and deployment verification. A separate integration check runs the deployment verifier against the actual production Next routes and emulated Firestore. These tests do not provision real Google Cloud resources. The script follows the official [Auth configuration API](https://docs.cloud.google.com/identity-platform/docs/reference/rest/v2/projects/updateConfig), [Google provider configuration API](https://docs.cloud.google.com/identity-platform/docs/reference/rest/v2/projects.defaultSupportedIdpConfigs/get), and [gcloud structured flag-file format](https://docs.cloud.google.com/sdk/gcloud/reference/topic/flags-file).
 
 ### Cloud Shell Auth HTTP 403 troubleshooting
 
