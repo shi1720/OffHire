@@ -7,15 +7,15 @@
 
 ## Submission links and fields
 
-| Devpost field | Final value |
-| --- | --- |
-| Upstream PR URL | [Open pull request #664](https://github.com/CALLE-AI/awesome-phone-call-agents/pull/664) — verified open |
-| Demonstration video | **[REQUIRED: PUBLIC YOUTUBE OR VIMEO URL, UNDER THREE MINUTES]** |
-| CALL-E account email | **[REQUIRED: EXACT EMAIL FROM THE CALL-E ACCOUNT]** |
-| Working demo/test build | [Deployed OffHire app](https://offhire-shivam.sg127977958.chatgpt.site) — **currently private; public audience choice pending** |
-| Devpost username / registration | Verified signed-in Devpost account is registered; draft creation is paused at a CAPTCHA. |
+| Devpost field                   | Final value                                                                                                                     |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Upstream PR URL                 | [Open pull request #664](https://github.com/CALLE-AI/awesome-phone-call-agents/pull/664) — verified open                        |
+| Demonstration video             | **[REQUIRED: PUBLIC YOUTUBE OR VIMEO URL, UNDER THREE MINUTES]**                                                                |
+| CALL-E account email            | **[REQUIRED: EXACT EMAIL FROM THE CALL-E ACCOUNT]**                                                                             |
+| Working demo/test build         | [Deployed OffHire app](https://offhire-shivam.sg127977958.chatgpt.site) — **currently private; public audience choice pending** |
+| Devpost username / registration | Verified signed-in Devpost account is registered; draft creation is paused at a CAPTCHA.                                        |
 
-The source is public, the upstream contribution PR is open, and [repository CI passes](https://github.com/shi1720/call-e/actions/runs/34844022503). The hosted synthetic rehearsal has been verified against the deployed persistent database. These checks do not establish a live CALL-E phone call, and the private deployment does not yet establish access for judges. **Devpost has not been submitted.**
+The source is public, the upstream contribution PR is open, and [repository CI passes](https://github.com/shi1720/call-e/actions/runs/34844798171). The hosted synthetic rehearsal has been verified against the deployed persistent database. These checks do not establish a live CALL-E phone call, and the private deployment does not yet establish access for judges. **Devpost has not been submitted.**
 
 The project deadline is **14 September 2026, 21:15 IST / 23:45 SGT / 15:45 UTC**. A saved draft is not a submitted entry. Keep judge access available free of charge through **13 October 2026, 14:30 IST / 17:00 SGT**. [Official rules](https://call-e.devpost.com/rules)
 
@@ -29,7 +29,7 @@ A crew finishes with a machine. The site asks for collection. The rental desk sa
 
 That gap inspired OffHire. It helps a contractor's office complete the supplier conversation and retain the result alongside the rental. The useful distinction is simple: a pickup window, a supplier-reported billing cutoff and physical collection are different facts.
 
-IPAF's rental guidance recommends recording off-hire details and a unique reference communicated in writing, then treats collection separately. Supplier terms still govern the actual agreement. OffHire supports that operational handoff without assuming one universal billing rule. [IPAF Rental Standard, sections 9.11–9.13](https://www.ipaf.org/sites/default/files/2023-12/IPAF%20Rental%20Standard%20(Including%20Guidance%20for%20Rental%20Companies)%20RP-3-EN--V3.1-20231208.pdf)
+IPAF's rental guidance recommends recording off-hire details and a unique reference communicated in writing, then treats collection separately. Supplier terms still govern the actual agreement. OffHire supports that operational handoff without assuming one universal billing rule. [IPAF Rental Standard, sections 9.11–9.13](<https://www.ipaf.org/sites/default/files/2023-12/IPAF%20Rental%20Standard%20(Including%20Guidance%20for%20Rental%20Companies)%20RP-3-EN--V3.1-20231208.pdf>)
 
 ### What it does
 
@@ -110,7 +110,7 @@ The open-source workflow remains available for builders using their own CALL-E a
 
 1. **CALL-E access, if live verification is desired:** create or use a project API key in [CALL-E Account → API Keys](https://dashboard.heycall-e.com/account/api-keys), and provide it through the private server-secret setup. Do not paste it into this document, a public repository or the video. The key, live operator authorization and destination allowlist must be configured before real calling.
 2. **Authorized phone:** provide an E.164 number you own or have explicit permission to test, with its actual region/locale, and answer the fictional supplier roleplay. Check the exact plan before approving the call. The roleplay is in `OffHire-Video-Script.md`.
-3. **Voice and recording:** record the verbatim narration and app sequence, optionally including the verified live call. Use the rehearsal wording if live verification remains unavailable.
+3. **Video:** a two-minute generated-narration rehearsal is ready as `OffHire-Narrated-Rehearsal.mp4`, with editable English captions. Listen through it before upload. Shivam can alternatively record the verbatim voiceover. Include an actual authorized call only after verification; keep rehearsal wording while that remains unavailable.
 4. **Public video/account fields:** upload the final video, provide its public URL and the exact CALL-E account email, and complete the Devpost entry while signed into the correct account.
 
 These are remaining requirements at the time this pack was written. If a later setup or upload completes one, retain its verified result rather than repeating the action.

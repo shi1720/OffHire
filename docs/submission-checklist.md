@@ -11,7 +11,8 @@ Deadline: **21:15 IST / 23:45 SGT / 15:45 UTC, 14 September 2026**. The [hackath
 - [ ] Explicit public audience choice for the hosted demo. It is currently owner-private; local source runs without a CALL-E key.
 - [ ] Private CALL-E API key, actual account email and explicitly authorized owned/consenting test phone.
 - [ ] Real CALL-E roleplay, actual retrieved transcript/result and redacted evidence. No live test has yet been performed.
-- [ ] Narrated video under 3 minutes, publicly available on YouTube or Vimeo. A silent screenshot walkthrough is supporting footage, not a completed narrated live demonstration.
+- [x] Two-minute narrated rehearsal exported with generated-voice disclosure, technical audio/video checks and English captions. This is a synthetic application walkthrough, not a live call.
+- [ ] Listen through the narrated export and upload publicly to YouTube or Vimeo; verify its link while logged out. Existing YouTube channel is available; upload awaits confirmation of the Terms of Service acknowledgment.
 - [ ] Complete Devpost CAPTCHA, populate the actual form and verify final submission receipt. Account is signed in and registered; draft creation stopped at CAPTCHA.
 - [ ] Optional CALL-E feedback survey by 18 September 2026, 21:15 IST. Use only actual observations and distinguish SDK/local tests from live-call experience.
 

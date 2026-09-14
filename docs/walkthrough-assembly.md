@@ -4,7 +4,7 @@
 **Length:** 2:00.00 · 1920×1080 · 25 fps · no audio  
 **Presenter:** Shivam Gupta
 
-This is a screenshot walkthrough of seven verified app states, not a screen recording or proof of a live CALL-E call. Every frame is labeled **SYNTHETIC REHEARSAL · ACTUAL APP SCREENS**. The fictional records demonstrate the product's behavior. The prepared picture track needs only your voiceover for a concise rehearsal demonstration.
+This is a screenshot walkthrough of seven verified app states, not a screen recording or proof of a live CALL-E call. Every frame is labeled **SYNTHETIC REHEARSAL · ACTUAL APP SCREENS**. The fictional records demonstrate the product's behavior. The prepared picture track can take your voiceover for a concise rehearsal demonstration. A finished alternative, `OffHire-Narrated-Rehearsal.mp4`, uses a disclosed macOS narrator and includes optional English subtitles plus an editable SRT. Listen through that version before public upload; it does not require a new voice recording.
 
 ## Read this verbatim
 
@@ -54,14 +54,14 @@ Replace the final section's sentence about missing verification only after the c
 
 ## Shot timings
 
-| Time | Actual screenshot | Editorial caption |
-| --- | --- | --- |
-| 0:00–0:14 | Closeout desk | The closeout desk: entered rates, not savings |
-| 0:14–0:30 | Call plan | Review the exact asset and the questions before a call |
-| 0:30–0:48 | Receipt | Capture the billing cutoff and the supplier's words |
-| 0:48–1:10 | Ambiguous telehandler | Pickup is booked. Billing is still unconfirmed. |
-| 1:10–1:27 | Invoice comparison | Flag an invoice date difference for finance review |
-| 1:27–1:42 | Site update | Record collection as a separate human observation |
-| 1:42–2:00 | Final ledger | One ledger. Four separate completion states. |
+| Time      | Actual screenshot     | Editorial caption                                      |
+| --------- | --------------------- | ------------------------------------------------------ |
+| 0:00–0:14 | Closeout desk         | The closeout desk: entered rates, not savings          |
+| 0:14–0:30 | Call plan             | Review the exact asset and the questions before a call |
+| 0:30–0:48 | Receipt               | Capture the billing cutoff and the supplier's words    |
+| 0:48–1:10 | Ambiguous telehandler | Pickup is booked. Billing is still unconfirmed.        |
+| 1:10–1:27 | Invoice comparison    | Flag an invoice date difference for finance review     |
+| 1:27–1:42 | Site update           | Record collection as a separate human observation      |
+| 1:42–2:00 | Final ledger          | One ledger. Four separate completion states.           |
 
 The sequence does not show every interaction between states. All application pixels come from actual captures; only framing, section labels and the disclosure were added. Source images and composition details remain in the workspace's `work/video/` directory.

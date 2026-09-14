@@ -61,12 +61,12 @@ CALL-E's current callbacks are unsigned. OffHire treats the callback as a wake-u
 
 ## The product distinction
 
-| Fact | Evidence required | What remains open |
-|---|---|---|
-| Reported billing cutoff | Exact asset/contract, explicit cutoff/date/time/timezone, off-rent reference and transcript-supported read-back | Official written confirmation and final invoice review |
-| Collection arranged | Rental-desk statement with a collection window | Physical collection and site custody |
-| Collected | Operator records who observed collection | Any unresolved billing or invoice question |
-| Invoice review flag | Entered billed-through date later than the reported cutoff day | Human contract and invoice review; no automatic dispute or refund claim |
+| Fact                    | Evidence required                                                                                               | What remains open                                                       |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Reported billing cutoff | Exact asset/contract, explicit cutoff/date/time/timezone, off-rent reference and transcript-supported read-back | Official written confirmation and final invoice review                  |
+| Collection arranged     | Rental-desk statement with a collection window                                                                  | Physical collection and site custody                                    |
+| Collected               | Operator records who observed collection                                                                        | Any unresolved billing or invoice question                              |
+| Invoice review flag     | Entered billed-through date later than the reported cutoff day                                                  | Human contract and invoice review; no automatic dispute or refund claim |
 
 The engine matches **complete callee turns**, distinguishes the bot's speech, checks identifier boundaries and date/time support, and rejects later contradictions. It deliberately sends unfamiliar or ambiguous phrasing to review. These rules reduce false confirmations; they are not a general proof that every possible conversation is understood.
 
@@ -74,7 +74,7 @@ The rate metric is **entered daily rates awaiting confirmation**, separated by c
 
 ## Why build this business?
 
-Off-hire already has an industry-defined process. The [IPAF Rental Standard, sections 9.11–9.13](https://www.ipaf.org/sites/default/files/2023-12/IPAF%20Rental%20Standard%20(Including%20Guidance%20for%20Rental%20Companies)%20RP-3-EN--V3.1-20231208.pdf) separates off-hire reference handling from collection. Supplier terms vary, and portals already solve many straightforward requests.
+Off-hire already has an industry-defined process. The [IPAF Rental Standard, sections 9.11–9.13](<https://www.ipaf.org/sites/default/files/2023-12/IPAF%20Rental%20Standard%20(Including%20Guidance%20for%20Rental%20Companies)%20RP-3-EN--V3.1-20231208.pdf>) separates off-hire reference handling from collection. Supplier terms vary, and portals already solve many straightforward requests.
 
 OffHire's proposed customer is a contractor or rental broker coordinating several suppliers and repeated **missing or ambiguous confirmations**. It complements supplier portals and rental-management software. An already complete portal request should not trigger a ceremonial AI call.
 
@@ -101,6 +101,7 @@ This is a tested hackathon MVP. Production rollout still needs a real supplier p
 - [Product brief](docs/pitch/OffHire-Product-Brief.pdf) · [Editable pitch deck](docs/pitch/OffHire-Pitch.pptx)
 - [Demo narration and recording guide](docs/video-script.md)
 - [Timed walkthrough narration](docs/walkthrough-assembly.md)
+- [Reproducible video and generated narration](tools/media/README.md)
 - [Devpost draft](docs/devpost.md)
 - [Submission checklist](docs/submission-checklist.md)
 - [Specific CALL-E feedback](docs/call-e-feedback.md)
