@@ -1,0 +1,31 @@
+name: OffHire checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run setup
+      - name: Exercise real HTTP routes and local D1
+        run: |
+          mkdir -p work
+          npm run dev > work/dev.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://localhost:5173/api/health > /dev/null; then break; fi
+            sleep 1
+          done
+          npm run test:smoke
