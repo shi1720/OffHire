@@ -3,6 +3,7 @@ import { OperatorSignIn } from "@/components/operator-sign-in";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -110,6 +111,16 @@ function statusFor(d: Decision | null, active?: PublicJob) {
   };
 }
 
+function RequestedAtField() {
+  const [initialValue] = useState(() => {
+    const now = new Date();
+    return new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+      .toISOString().slice(0, 16);
+  });
+  return <Field label="Request submitted (your local time)" name="requestedAt"
+    type="datetime-local" defaultValue={initialValue} required />;
+}
+
 export default function Home() {
   const [state, setState] = useState<DeskState | null>(null);
   const [mode, setMode] = useState<"demo" | "live">("demo");
@@ -132,9 +143,13 @@ export default function Home() {
   } | null>(null);
   const [receiptJob, setReceiptJob] = useState<PublicJob | null>(null);
   const stateRef = useRef(state);
-  stateRef.current = state;
+  useLayoutEffect(() => {
+    stateRef.current = state;
+  }, [state]);
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("mode") === "live")
+      // The query string is an external browser input, unavailable during SSR.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setMode("live");
   }, []);
   const api = useCallback(
@@ -166,6 +181,8 @@ export default function Home() {
   }, [api]);
   useEffect(() => {
     let live = true;
+    // Clear the previous workspace before requesting data in the new mode.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setState(null);
     setError("");
     api("state")
@@ -1375,17 +1392,7 @@ export default function Home() {
                       ))}
                     </select>
                   </label>
-                  <Field
-                    label="Request submitted (your local time)"
-                    name="requestedAt"
-                    type="datetime-local"
-                    defaultValue={new Date(
-                      Date.now() - new Date().getTimezoneOffset() * 60000,
-                    )
-                      .toISOString()
-                      .slice(0, 16)}
-                    required
-                  />
+                  <RequestedAtField />
                   {mode === "live" && (
                     <Field
                       label="Approved phone number"
